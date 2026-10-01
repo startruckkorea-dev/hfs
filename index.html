@@ -9,65 +9,128 @@
 <style>
 /* HFS — Flex 구성원 목록(search-users 응답)을 APS 공통 직원 명부(employee_search.xlsx) 양식으로 바꾼다.
    Flex 데이터 처리는 이 브라우저 안에서만 한다(서버로 보내지 않는다). 저장소는 공개라 직원 정보는 코드에 넣지 않는다.
-   10-01: 로그인(M365) + 권한(system_config ADMIN_SP_1 만) + 접근 이력(STK-DB Logging_data/APS/HFS) 추가. */
+   10-01: 로그인(M365) + 권한(system_config ADMIN_SP_1 만) + 접근 이력(STK-DB Logging_data/APS/HFS) + 북마클릿 자동 수집.
+   10-01 v3: APS 계열과 같은 짙은 남색 머리띠 · 단추 · 표 모양으로 정리, 자동 수집을 3단계로, 매핑을 본부별 카드로, 수신 진행 팝업. */
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',-apple-system,'Malgun Gothic',sans-serif;background:#f3f2f1;color:#323130;font-size:14px}
-.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
-.header{background:#fff;border:1px solid #edebe9;border-radius:6px;padding:16px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
-.header .title{font-size:1.1rem;font-weight:700}
-.header .sub{font-size:.75rem;color:#605e5c;margin-top:3px}
-.header .safe{font-size:.72rem;color:#107c10;background:#dff6dd;border-radius:10px;padding:3px 10px;white-space:nowrap}
-.card{background:#fff;border:1px solid #edebe9;border-radius:6px;padding:20px 24px;margin-bottom:16px}
-.section-title{font-size:.82rem;font-weight:600;color:#0078d4;margin:0 0 12px;padding:5px 10px;background:#f0f6ff;border-radius:4px;border-left:3px solid #0078d4;display:flex;align-items:center;gap:8px}
-.section-title .r{margin-left:auto;font-weight:400;color:#605e5c;font-size:.72rem}
-.howto{font-size:.78rem;color:#605e5c;line-height:1.75;background:#faf9f8;border:1px solid #edebe9;border-radius:6px;padding:10px 14px;margin-bottom:12px}
-.howto b{color:#323130}.howto code{background:#f3f2f1;border-radius:3px;padding:0 4px;font-size:.74rem}
-.drop{border:1.5px dashed #c8c6c4;border-radius:8px;padding:22px;text-align:center;color:#605e5c;cursor:pointer;transition:all .12s}
-.drop:hover,.drop.on{border-color:#0078d4;background:#f0f6ff;color:#0078d4}
-.drop .big{font-size:.9rem;font-weight:600;margin-bottom:4px}
-.drop .small{font-size:.72rem}
-textarea{width:100%;min-height:90px;border:1px solid #d2d0ce;border-radius:4px;padding:8px 10px;font-family:Consolas,monospace;font-size:.72rem;resize:vertical;margin-top:10px}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
-.btn{border:1px solid #d2d0ce;background:#fff;color:#323130;border-radius:4px;padding:7px 16px;font-size:.8rem;cursor:pointer;font-family:inherit}
-.btn:hover{background:#f3f2f1}
-.btn-p{background:#0078d4;border-color:#0078d4;color:#fff;font-weight:600}
-.btn-p:hover{background:#106ebe}
+:root{--navy:#0f2744;--navy2:#101B34;--blue:#0078d4;--blue-d:#106ebe;--ink:#1f2937;--ink2:#374151;--mute:#6b7280;--line:#e5e7eb;--line2:#d1d5db;--bg:#f3f4f6;--card:#fff;--ok:#107c10;--warn:#8a6116;--warn-bg:#fff8e1;--warn-line:#f1dfa0;--bad:#a4262c;--bad-bg:#fdf0f1}
+html{-webkit-text-size-adjust:100%}
+body{font-family:'Segoe UI',-apple-system,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--ink);font-size:13px;line-height:1.5}
+button,input,select,textarea{font-family:inherit}
+a{color:var(--blue)}
+.hidden{display:none!important}
+/* 머리띠 — APS 와 같은 남색 */
+.topbar{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color:#fff}
+.topbar-in{max-width:1180px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand-ico{width:36px;height:36px;border-radius:9px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;flex:none}
+.brand-t{font-size:1rem;font-weight:700;letter-spacing:.1px;white-space:nowrap}
+.brand-s{font-size:.72rem;color:rgba(255,255,255,.62);margin-top:1px}
+.topbar-space{flex:1}
+.who{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.who .chip{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:4px 12px;font-size:.74rem;color:#fff;white-space:nowrap}
+.btn-ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:6px;height:30px;padding:0 12px;font-size:.76rem;cursor:pointer}
+.btn-ghost:hover{background:rgba(255,255,255,.1)}
+.privacy{max-width:1180px;margin:0 auto;padding:8px 20px 0;font-size:.72rem;color:var(--mute);display:flex;align-items:center;gap:6px}
+.privacy svg{flex:none;color:var(--ok)}
+.wrap{max-width:1180px;margin:0 auto;padding:12px 20px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 22px 20px;margin-bottom:14px}
+.sec{display:flex;align-items:center;gap:10px;font-size:.84rem;font-weight:600;color:var(--blue);padding:6px 12px;background:#f0f6ff;border-left:3px solid var(--blue);border-radius:4px;margin-bottom:14px}
+.sec .r{margin-left:auto;display:flex;align-items:center;gap:6px;font-weight:400;color:var(--mute);font-size:.72rem;flex-wrap:wrap;justify-content:flex-end}
+/* 단추 — APS 상단 도구 단추와 같은 치수 */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:6px;border:1px solid var(--line2);background:#fff;color:var(--ink2);font-size:.78rem;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;text-decoration:none;transition:all .15s;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.btn:hover{border-color:#3b82f6;color:#1d4ed8;background:#f8fafc}
+.btn.p{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.p:hover{background:var(--blue-d);border-color:var(--blue-d);color:#fff}
+.btn.sm{height:28px;padding:0 10px;font-size:.74rem}
 .btn:disabled{opacity:.5;cursor:default}
-.msg{font-size:.78rem;margin-top:8px;line-height:1.6}
-.msg.ok{color:#107c10}.msg.err{color:#a4262c}.msg.warn{color:#8a6116}
-.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-.stat{border:1px solid #edebe9;border-radius:6px;padding:8px 14px;min-width:110px}
-.stat .n{font-size:1.1rem;font-weight:700}.stat .l{font-size:.7rem;color:#605e5c}
-.stat.warn{border-color:#f0d9a0;background:#fdf6e3}.stat.warn .n{color:#8a6116}
-table{width:100%;border-collapse:collapse;font-size:.74rem}
-th{background:#f3f2f1;text-align:left;padding:7px 9px;font-weight:600;font-size:.7rem;border-bottom:1px solid #edebe9;white-space:nowrap;position:sticky;top:0}
-td{padding:6px 9px;border-bottom:1px solid #f3f2f1;white-space:nowrap}
-tr.fl td{background:#fafcff}
+.btn svg{flex:none}
+/* 가져오기 — 탭 */
+.seg{display:inline-flex;background:#eef0f3;border-radius:8px;padding:3px;margin-bottom:14px}
+.seg button{border:0;background:transparent;border-radius:6px;padding:6px 14px;font-size:.78rem;font-weight:600;color:var(--mute);cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.step{position:relative;border:1px solid var(--line);border-radius:10px;padding:16px 16px 14px 18px;background:#fbfcfe;min-height:150px;display:flex;flex-direction:column;gap:8px}
+.step .no{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.step .h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.84rem;color:var(--ink)}
+.step .d{font-size:.76rem;color:var(--mute);line-height:1.6}
+.step .d b{color:var(--ink2);font-weight:600}
+.step .act{margin-top:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.step .tip{font-size:.7rem;color:#9ca3af}
+.hint-line{margin-top:10px;font-size:.72rem;color:var(--mute);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hint-line a{color:var(--mute)}
+.drop{border:1.5px dashed #c7cdd6;border-radius:10px;padding:22px;text-align:center;color:var(--mute);cursor:pointer;transition:all .12s;background:#fafbfc}
+.drop:hover,.drop.on{border-color:var(--blue);background:#f0f6ff;color:var(--blue)}
+.drop .big{font-size:.86rem;font-weight:600;margin-bottom:3px;color:var(--ink2)}
+.drop .small{font-size:.72rem}
+.manual-help{font-size:.74rem;color:var(--mute);line-height:1.7;margin-bottom:10px}
+.manual-help code,.rule code,.d code{background:#f3f4f6;border-radius:3px;padding:0 4px;font-size:.72rem}
+textarea{width:100%;min-height:88px;border:1px solid var(--line2);border-radius:6px;padding:8px 10px;font-family:Consolas,'Segoe UI',monospace;font-size:.72rem;resize:vertical;margin-top:10px;color:var(--ink)}
+textarea:focus,select:focus{outline:2px solid #bfdbfe;outline-offset:0;border-color:#3b82f6}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.status{display:inline-flex;align-items:center;gap:7px;margin-top:12px;font-size:.78rem;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:#fafbfc;color:var(--ink2)}
+.status.ok{border-color:#bfe5c2;background:#f1faf1;color:#0b5f0b}
+.status.err{border-color:#f1c0c4;background:var(--bad-bg);color:var(--bad)}
+.status.warn{border-color:var(--warn-line);background:var(--warn-bg);color:var(--warn)}
+.status:empty{display:none}
+/* 매핑 — 본부별 카드 */
+.sum{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;color:var(--mute);background:#f3f4f6;border-radius:20px;padding:2px 10px}
+.sum b{color:var(--ink);font-weight:700}
+.sum.warn{background:var(--warn-bg);color:var(--warn)}.sum.warn b{color:var(--warn)}
+.dept-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;align-items:start}
+.dept{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.dept-h{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#f8fafc;border-bottom:1px solid var(--line);font-weight:700;font-size:.8rem;color:var(--ink)}
+.dept-h .dot{width:8px;height:8px;border-radius:50%;background:var(--blue);flex:none}
+.dept-h .c{margin-left:auto;font-weight:400;color:var(--mute);font-size:.72rem;white-space:nowrap}
+.dept.unk{border-color:var(--warn-line)}
+.dept.unk .dept-h{background:var(--warn-bg);color:var(--warn)}.dept.unk .dot{background:#d9a300}
+.team{display:grid;grid-template-columns:1fr auto 140px;align-items:center;gap:10px;padding:6px 14px;border-bottom:1px solid #f1f3f5;font-size:.78rem}
+.team:last-child{border-bottom:0}
+.team .n{color:var(--ink);line-height:1.35;word-break:keep-all}
+.team .n .lead{color:var(--mute);font-size:.7rem;margin-left:4px}
+.team .c{font-size:.7rem;color:#9ca3af;white-space:nowrap}
+.team select{width:140px;height:28px;border:1px solid var(--line2);border-radius:6px;padding:0 8px;font-size:.74rem;background:#fff;color:var(--ink)}
+.dept.unk .team select{border-color:#e0b400}
+.rule{font-size:.74rem;color:var(--mute);line-height:1.75}
+.rule b{color:var(--ink2);font-weight:600}
+.rule-grid{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin-top:6px;font-size:.74rem}
+.rule-grid dt{font-weight:600;color:var(--ink2);white-space:nowrap}
+.rule-grid dd{color:var(--mute)}
+details.more{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+details.more summary{cursor:pointer;font-size:.76rem;font-weight:600;color:#0b5fa5;list-style:none;display:inline-flex;align-items:center;gap:6px}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary::before{content:'';width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin-right:2px}
+details.more[open] summary::before{transform:rotate(45deg)}
+details.more .ovr-ta{min-height:64px}
+/* 결과 */
+.stats{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px;flex-wrap:wrap}
+.stat{flex:1;min-width:110px;padding:10px 16px;border-right:1px solid var(--line)}
+.stat:last-child{border-right:0}
+.stat .n{font-size:1.15rem;font-weight:700;color:var(--ink);line-height:1.2}
+.stat .l{font-size:.7rem;color:var(--mute);margin-top:2px}
+.stat.warn{background:var(--warn-bg)}.stat.warn .n{color:var(--warn)}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tog{display:inline-flex;align-items:center;gap:6px;font-size:.76rem;color:var(--ink2);cursor:pointer;padding:0 4px}
+.tog input{accent-color:var(--blue);width:14px;height:14px}
+.tbl{max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.74rem}
+th{background:#f8fafc;text-align:left;padding:8px 10px;font-weight:600;font-size:.7rem;color:var(--mute);border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;z-index:1}
+td{padding:6px 10px;border-bottom:1px solid #f1f3f5;white-space:nowrap;color:var(--ink)}
+tr:hover td{background:#fafbfd}
+tr.fl td{background:#f4f8ff}
 tr.lead td{font-weight:600}
-.tbl{max-height:560px;overflow:auto;border:1px solid #edebe9;border-radius:6px}
-.pill{display:inline-block;font-size:10px;border-radius:10px;padding:1px 7px;margin-left:4px;font-weight:600;vertical-align:1px}
-.p-fl{color:#fff;background:#0078d4}.p-tl{color:#107c10;background:#dff6dd}.p-loa{color:#8a6116;background:#fff4ce}.p-ext{color:#605e5c;background:#edebe9}
-.p-new{color:#107c10;background:#dff6dd}.p-chg{color:#8a6116;background:#fff4ce}.p-del{color:#a4262c;background:#fde7e9}
-.map-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px 14px}
-.map-row{display:flex;align-items:center;gap:8px;font-size:.76rem;padding:3px 0;border-bottom:1px dashed #edebe9}
-.map-row .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.map-row .c{font-size:.68rem;color:#a19f9d}
-.map-row select{border:1px solid #d2d0ce;border-radius:4px;padding:3px 6px;font-size:.74rem;font-family:inherit;min-width:120px}
-.map-row.unk{background:#fdf6e3}
-.rule{font-size:.74rem;color:#605e5c;line-height:1.7;margin-top:10px}
-.rule b{color:#323130}
-details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
-.ovr textarea{min-height:70px}
-.chg-old{color:#a4262c;text-decoration:line-through}
-.chg-new{color:#107c10;font-weight:600}
-.hidden{display:none}
+tr.warnrow td{background:var(--warn-bg)}
+.pill{display:inline-block;font-size:10px;border-radius:10px;padding:1px 7px;margin-left:4px;font-weight:600;vertical-align:1px;line-height:1.5}
+.p-fl{color:#fff;background:var(--blue)}.p-tl{color:var(--ok);background:#dff6dd}.p-loa{color:var(--warn);background:#fff4ce}.p-ext{color:#4b5563;background:#e5e7eb}
+.p-new{color:var(--ok);background:#dff6dd}.p-chg{color:var(--warn);background:#fff4ce}.p-del{color:var(--bad);background:#fde7e9}
+.chg-old{color:var(--bad);text-decoration:line-through}
+.chg-new{color:var(--ok);font-weight:600}
 /* 로그인 · 접근 거부 화면(10-01) — SPG 등 다른 STK 시스템과 같은 구성 */
 #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(145deg,#0f2744 0%,#101B34 100%)}
 .login-box{background:#fff;border-radius:14px;padding:32px 30px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
 .login-title{font-size:.95rem;font-weight:700;color:#101B34;margin-bottom:4px}
 .login-co{font-size:.74rem;color:#8A94A6;margin-bottom:5px}
 .login-guide{font-size:.74rem;color:#8A94A6;margin-bottom:16px;line-height:1.6}
-#btn-login{background:linear-gradient(135deg,#2F7B7A,#1A2B4C);color:#fff;border:none;border-radius:8px;padding:11px 0;font-size:.85rem;font-weight:600;cursor:pointer;width:100%;font-family:inherit}
+#btn-login{background:linear-gradient(135deg,#2F7B7A,#1A2B4C);color:#fff;border:none;border-radius:8px;padding:11px 0;font-size:.85rem;font-weight:600;cursor:pointer;width:100%}
 #btn-login:disabled{background:#cbd5e0;cursor:not-allowed}
 #login-err{color:#C1352E;font-size:.78rem;margin-top:10px;display:none;line-height:1.6;word-break:break-all}
 .deny-box{background:#fff;border-radius:14px;padding:36px 40px;max-width:400px;width:92%;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.25)}
@@ -78,9 +141,32 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
 .deny-ask{background:#f0f6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin-bottom:20px;text-align:left;font-size:.78rem;color:#374151;line-height:1.8}
 .deny-ask b{color:#1d4ed8}
 .page-footer{position:fixed;bottom:0;left:0;right:0;padding:9px 24px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:rgba(255,255,255,.55);background:rgba(0,0,0,.18);gap:12px;flex-wrap:wrap}
-.who{display:flex;align-items:center;gap:8px;font-size:.76rem;color:#605e5c;flex-wrap:wrap;justify-content:flex-end}
-.who .chip{background:#f3f2f1;border-radius:12px;padding:3px 10px;color:#323130}
-@media(max-width:640px){.header,.card{padding:14px}}
+/* 수신 진행 팝업 — flex.team 북마클릿이 보내는 동안 */
+#flex-modal{position:fixed;inset:0;z-index:9000;background:rgba(15,39,68,.45);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center}
+#flex-modal.show{display:flex}
+.fm{background:#fff;border-radius:14px;width:440px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.25);overflow:hidden}
+.fm-h{display:flex;align-items:center;gap:12px;padding:18px 22px 14px}
+.fm-ico{width:40px;height:40px;border-radius:10px;background:#e8f1fb;color:var(--blue);display:flex;align-items:center;justify-content:center;flex:none}
+.fm-t{font-size:.95rem;font-weight:700;color:var(--navy)}
+.fm-s{font-size:.74rem;color:var(--mute);margin-top:2px}
+.fm-steps{padding:4px 22px 6px;display:flex;flex-direction:column;gap:2px}
+.fs{display:flex;align-items:center;gap:12px;padding:8px 0;font-size:.8rem;color:#9ca3af}
+.fs .ic{width:22px;height:22px;border-radius:50%;border:1.5px solid #d1d5db;display:flex;align-items:center;justify-content:center;flex:none;font-size:.7rem;color:#9ca3af;background:#fff}
+.fs .tx{flex:1}.fs .sub{font-size:.72rem;color:#9ca3af;margin-top:1px}
+.fs.act{color:var(--ink)}.fs.act .ic{border-color:var(--blue);color:var(--blue);font-size:0}
+.fs.act .ic::after{content:'';width:12px;height:12px;border:2px solid #bfdbfe;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+.fs.done{color:var(--ink2)}.fs.done .ic{background:var(--ok);border-color:var(--ok);color:#fff}
+.fs.bad{color:var(--bad)}.fs.bad .ic{background:var(--bad);border-color:var(--bad);color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+.fm-bar{height:6px;background:#eef0f3;border-radius:6px;overflow:hidden;margin:2px 0 4px 34px}
+.fm-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3b82f6,#0078d4);transition:width .3s}
+.fm-bar.indet i{width:35%;animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
+.fm-f{display:flex;align-items:center;gap:10px;padding:12px 22px 18px;font-size:.72rem;color:var(--mute)}
+.fm-f .sp{flex:1}
+@media(prefers-reduced-motion:reduce){.fs.act .ic::after,.fm-bar.indet i{animation:none}}
+@media(max-width:900px){.steps{grid-template-columns:1fr}.step{min-height:0}}
+@media(max-width:640px){.card{padding:14px}.topbar-in{padding:12px 14px}.wrap,.privacy{padding-left:12px;padding-right:12px}.team{grid-template-columns:1fr 130px}.team .c{display:none}.team select{width:130px}}
 </style>
 </head>
 <body>
@@ -109,93 +195,108 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
   </div>
 </div>
 
-<div class="wrap hidden" id="app">
-  <div class="header">
-    <div>
-      <div class="title">HFS — Flex 구성원 → 직원 명부(employee_search)</div>
-      <div class="sub">Flex 구성원 화면의 응답(JSON · HAR)을 넣으면 APS 공통 양식(Company · Department · Team · EngName · EMail · WMC_old · Boss · Boss of Boss)의 Excel 로 만들어 줍니다.</div>
-    </div>
-    <div class="who">
-      <span class="safe">🔒 Flex 데이터는 이 브라우저 안에서만 처리 · 로그인 · 내려받기 이력만 STK-DB 에 기록</span>
-      <span class="chip" id="who-name"></span>
-      <button class="btn" onclick="signOut()">로그아웃</button>
-    </div>
-  </div>
+<div id="app" class="hidden">
+  <div class="topbar"><div class="topbar-in">
+    <div class="brand"><div class="brand-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div><div class="brand-t">HFS</div><div class="brand-s">Flex 구성원 → 직원 명부(employee_search) · Star Truck Korea</div></div></div>
+    <div class="topbar-space"></div>
+    <div class="who"><span class="chip" id="who-name"></span><button class="btn-ghost" onclick="signOut()">로그아웃</button></div>
+  </div></div>
+  <div class="privacy"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Flex 데이터는 이 브라우저 안에서만 처리합니다 · STK-DB 에는 로그인 · 내려받기 이력만 남습니다</div>
 
-  <!-- 1. 데이터 넣기 -->
+  <div class="wrap">
+  <!-- 1. 가져오기 -->
   <div class="card">
-    <div class="section-title">1. Flex 데이터 넣기</div>
-    <div class="howto" style="background:#f0f6ff;border-color:#bfdbfe">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <b>자동으로 가져오기(권장)</b>
-        <a id="bm-link" class="btn btn-p" href="#" draggable="true" style="text-decoration:none" title="이 단추를 브라우저 북마크 바로 끌어다 놓으세요" onclick="bmClick(event)">📥 HFS 수집</a>
-        <span id="bm-msg" style="color:#0b5fa5"></span>
+    <div class="sec">1. Flex 구성원 가져오기</div>
+    <div class="seg" role="tablist"><button class="on" id="tab-auto" onclick="showTab('auto')">자동 수집</button><button id="tab-file" onclick="showTab('file')">파일 · 붙여넣기</button></div>
+    <div id="pane-auto">
+      <div class="steps">
+        <div class="step">
+          <div class="h"><span class="no">1</span>북마크 등록<span class="tip">한 번만</span></div>
+          <div class="d">아래 단추를 브라우저 <b>북마크 바에 끌어다</b> 놓습니다. 단추 안에 수집 코드가 들어 있어 눌러서 쓰는 북마크가 됩니다.</div>
+          <div class="act"><a id="bm-link" class="btn p" href="#" draggable="true" onclick="bmClick(event)" title="이 단추를 북마크 바로 끌어다 놓으세요"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> HFS 수집</a><span id="bm-msg" class="tip"></span></div>
+          <div class="tip"><a href="#" onclick="toggleConsole(event)">북마크 대신 콘솔에 붙여 넣기</a></div>
+        </div>
+        <div class="step">
+          <div class="h"><span class="no">2</span>Flex 구성원 화면 열기</div>
+          <div class="d">flex.team 에 로그인된 상태로 구성원 화면을 엽니다. <b>스크롤을 내리기 전에</b> 다음 단계로 가면 가장 잘 잡힙니다.</div>
+          <div class="act"><a class="btn" href="https://flex.team/people/users" target="_blank" rel="noopener"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> flex.team/people/users</a></div>
+        </div>
+        <div class="step">
+          <div class="h"><span class="no">3</span>북마크 누르기</div>
+          <div class="d">목록을 끝까지 자동으로 읽어 이 창으로 보냅니다. 이 창이 로그인 화면이면 로그인만 하면 이어서 들어옵니다. Flex 화면 오른쪽 아래에 진행 상자가 뜹니다.</div>
+          <div class="act tip">보통 10초 안에 끝납니다 · 안 되면 진행 상자의 「진단 내용 복사」를 IT 에 보내 주세요</div>
+        </div>
       </div>
-      ① 위 「HFS 수집」 단추를 브라우저 <b>북마크 바로 끌어다 놓으세요</b>(한 번만). ②
-      <a href="https://flex.team/people/users" target="_blank" rel="noopener">flex.team 구성원 화면</a>을 열고 그 북마크를 누르면 목록을 <b>끝까지 자동으로 읽어</b> 이 화면으로 보내 줍니다
-      (HFS 창이 새로 열림 · 로그인이 필요하면 그 창에서 로그인하면 이어서 들어옵니다). Flex 데이터는 브라우저 안에서만 오갑니다.
-      <details style="margin-top:6px"><summary>북마크 대신 콘솔에 붙여 넣기</summary>
-        <div class="rule">flex.team 구성원 화면에서 <code>F12</code> → <b>Console</b> 탭에 아래를 붙여 넣고 Enter (처음엔 <code>allow pasting</code> 을 먼저 입력하라고 할 수 있습니다).
-          <button class="btn" style="padding:3px 10px;margin-left:6px" onclick="copyBm()">복사</button></div>
-        <textarea id="bm-src" readonly spellcheck="false" style="min-height:70px;font-size:.66rem"></textarea>
-      </details>
+      <div id="console-box" class="hidden" style="margin-top:12px">
+        <div class="manual-help">flex.team 구성원 화면에서 <code>F12</code> → <b>Console</b> 탭에 아래를 붙여 넣고 Enter (처음엔 <code>allow pasting</code> 을 먼저 입력하라고 할 수 있습니다).
+          <button class="btn sm" style="margin-left:6px" onclick="copyBm()">복사</button></div>
+        <textarea id="bm-src" readonly spellcheck="false" style="min-height:64px;font-size:.66rem;margin-top:0"></textarea>
+      </div>
     </div>
-    <details class="howto" style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600;color:#323130">직접 넣기(HAR · JSON) — 자동 수집이 안 될 때</summary>
-      <div style="margin-top:6px">flex.team <b>구성원</b> 화면에서 <code>F12</code> → <b>네트워크</b> 탭 → 필터에 <code>search-users</code> →
-      구성원 목록을 <b>끝까지 내려</b> 모든 요청(20명씩)이 나오게 한 뒤,<br>
-      ① 요청 목록에서 오른쪽 클릭 → <b>「모두 HAR로 저장(콘텐츠 포함)」</b> 한 파일을 아래에 끌어 놓거나 (한 번에 전부),
-      ② 각 요청의 <b>응답</b> 탭 내용을 차례로 복사해 아래 칸에 이어 붙여 넣으세요(여러 개를 그냥 이어 붙여도 됩니다).</div>
-    </details>
-    <div class="drop" id="drop" onclick="document.getElementById('file').click()">
-      <div class="big">📂 HAR · JSON · TXT 파일을 끌어 놓거나 클릭해 고르기</div>
-      <div class="small">여러 파일을 한 번에 넣어도 됩니다 · 같은 사람은 한 번만 셉니다</div>
-      <input type="file" id="file" multiple accept=".har,.json,.txt" class="hidden" onchange="onFiles(this.files);this.value=''">
+    <div id="pane-file" class="hidden">
+      <div class="manual-help">flex.team 구성원 화면 → <code>F12</code> → <b>네트워크</b> 탭 → 필터 <code>search-users</code> → 목록을 <b>끝까지 내린</b> 뒤, 요청 목록에서 오른쪽 클릭 → <b>「모두 HAR로 저장(콘텐츠 포함)」</b> 한 파일을 아래에 놓거나, 각 요청의 <b>응답</b> 내용을 복사해 붙여 넣으세요(여러 개를 이어 붙여도 됩니다).</div>
+      <div class="drop" id="drop" onclick="document.getElementById('file').click()">
+        <div class="big">HAR · JSON · TXT 파일을 끌어 놓거나 클릭해 고르기</div>
+        <div class="small">여러 파일을 한 번에 넣어도 됩니다 · 같은 사람은 한 번만 셉니다</div>
+        <input type="file" id="file" multiple accept=".har,.json,.txt" class="hidden" onchange="onFiles(this.files);this.value=''">
+      </div>
+      <textarea id="paste" placeholder="또는 응답(JSON)을 여기에 붙여 넣기 — {&quot;continuation&quot;: …, &quot;list&quot;: [ … ]} 를 여러 개 이어 붙여도 됩니다"></textarea>
+      <div class="row"><button class="btn p" onclick="onPaste()">붙여 넣은 내용 읽기</button><button class="btn" onclick="resetAll()">처음부터</button></div>
     </div>
-    <textarea id="paste" placeholder="또는 응답(JSON)을 여기에 붙여 넣기 — {&quot;continuation&quot;: …, &quot;list&quot;: [ … ]} 를 여러 개 이어 붙여도 됩니다"></textarea>
-    <div class="row">
-      <button class="btn btn-p" onclick="onPaste()">붙여 넣은 내용 읽기</button>
-      <button class="btn" onclick="resetAll()">처음부터</button>
-    </div>
-    <div class="msg" id="in-msg"></div>
+    <div class="status" id="in-msg"></div>
   </div>
 
   <!-- 2. 조직 매핑 -->
   <div class="card hidden" id="map-card">
-    <div class="section-title">2. 팀 → Department(본부) 매핑 <span class="r">Flex 에는 팀의 상위 조직 정보가 없어 여기서 정합니다 · 이 브라우저에 기억됩니다</span></div>
-    <div class="map-grid" id="map-grid"></div>
-    <div class="rule">
-      <b>보고 구조 규칙</b> — Department 와 같은 이름의 Flex 조직(예: Sales · CSP · PMM · F&amp;C)의 장이 <b>본부장</b>, 각 팀의 장이 <b>팀장</b>,
-      「Star Truck Korea」 의 장이 <b>대표(RD)</b> 입니다.<br>
-      · 팀원: Boss = 팀장, Boss of Boss = 부서장(본부장). 본부장이 팀장을 겸하면 둘 다 본부장. 본부가 없는 팀(HR · Compliance 등)은 부서장 = 그 팀장.<br>
-      · 팀장: Boss = 본부장(본부가 없으면 RD), Boss of Boss = 그 위.<br>
-      · 본부장: Boss = RD, Boss of Boss = <code>-</code> · RD: <code>-</code> / <code>-</code><br>
-      · 본부장 행은 Department · Team 에 본부 이름을 함께 적습니다(예: Sales / Sales).
-    </div>
-    <details class="ovr" style="margin-top:12px">
-      <summary>EngName 직접 지정 (선택)</summary>
-      <div class="rule" style="margin-top:6px">기본 규칙: Flex 표시 이름이 영문 닉네임 한 단어(Jimmy · Gina …)면 「닉네임 + 성」, 아니면 Flex 영문 이름(First Last).
-        규칙과 다르게 적고 싶은 사람만 <code>메일=이름</code> 으로 한 줄씩 적으세요.</div>
-      <textarea id="ovr" spellcheck="false" placeholder="austin.rho@hyosung.com=Chanwhi Rho" oninput="saveOvr();build()"></textarea>
+    <div class="sec">2. 팀 → Department(본부) 매핑 <span class="r" id="map-sum"></span></div>
+    <div class="dept-grid" id="map-grid"></div>
+    <details class="more"><summary>보고 구조 규칙</summary>
+      <div class="rule" style="margin-top:8px">Department 와 같은 이름의 Flex 조직(Sales · CSP · PMM · F&amp;C)의 장이 <b>본부장</b>, 각 팀의 장이 <b>팀장</b>, 「Star Truck Korea」의 장이 <b>대표(RD)</b>입니다.</div>
+      <dl class="rule-grid">
+        <dt>팀원</dt><dd>Boss = 팀장 · Boss of Boss = 본부장 (본부가 없는 팀 — HR · Compliance 등 — 은 그 팀장)</dd>
+        <dt>팀장</dt><dd>Boss = 본부장(본부가 없으면 RD) · Boss of Boss = RD</dd>
+        <dt>본부장</dt><dd>Boss = RD · Boss of Boss = <code>-</code> · 행의 Department · Team 에 본부 이름을 함께 적음(예: Sales / Sales)</dd>
+        <dt>대표(RD)</dt><dd><code>-</code> / <code>-</code></dd>
+      </dl>
+      <div class="rule" style="margin-top:6px">Flex 에는 팀의 상위 조직 정보가 없어 여기서 정하며, 고른 값은 이 브라우저에 기억됩니다.</div>
+    </details>
+    <details class="more"><summary>EngName 직접 지정</summary>
+      <div class="rule" style="margin:8px 0 6px">기본 규칙: Flex 표시 이름이 영문 닉네임 한 단어(Jimmy · Gina …)면 「닉네임 + 성」, 아니면 Flex 영문 이름(First Last). 다르게 적을 사람만 <code>메일=이름</code> 으로 한 줄씩.</div>
+      <textarea id="ovr" class="ovr-ta" spellcheck="false" placeholder="austin.rho@hyosung.com=Chanwhi Rho" oninput="saveOvr();build()" style="margin-top:0"></textarea>
     </details>
   </div>
 
-  <!-- 3. 미리보기 -->
+  <!-- 3. 결과 -->
   <div class="card hidden" id="out-card">
-    <div class="section-title">3. 결과 미리보기 <span class="r" id="out-sub"></span></div>
+    <div class="sec">3. 결과 <span class="r" id="out-sub"></span></div>
     <div class="stats" id="stats"></div>
-    <div class="row" style="margin:0 0 10px">
-      <label style="font-size:.78rem;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="opt-loa" checked onchange="build()"> 휴직자 포함</label>
-      <label style="font-size:.78rem;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="opt-ext" checked onchange="build()"> 계약직(.ext) 포함</label>
+    <div class="toolbar">
+      <label class="tog"><input type="checkbox" id="opt-loa" checked onchange="build()"> 휴직자 포함</label>
+      <label class="tog"><input type="checkbox" id="opt-ext" checked onchange="build()"> 계약직(.ext) 포함</label>
       <span style="flex:1"></span>
-      <button class="btn" onclick="compareWithDb()" title="STK-DB 문서 라이브러리의 employee_search.xlsx(지금 APS 가 쓰는 명부)를 읽어 비교">STK-DB 현재 명부와 비교</button>
-      <button class="btn" onclick="document.getElementById('cmp-file').click()">파일로 비교(xlsx)</button>
+      <button class="btn" onclick="compareWithDb()" title="STK-DB 문서 라이브러리의 employee_search.xlsx(지금 APS 가 쓰는 명부)를 읽어 비교"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg> STK-DB 명부와 비교</button>
+      <button class="btn" onclick="document.getElementById('cmp-file').click()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> 파일로 비교</button>
       <input type="file" id="cmp-file" accept=".xlsx,.xls" class="hidden" onchange="onCompare(this.files[0]);this.value=''">
-      <button class="btn btn-p" id="btn-dl" onclick="download()">⬇ Excel 다운로드</button>
+      <button class="btn p" id="btn-dl" onclick="download()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Excel 다운로드</button>
     </div>
-    <div class="msg" id="cmp-msg"></div>
+    <div class="status" id="cmp-msg" style="margin:0 0 10px"></div>
     <div class="tbl"><table id="tbl"></table></div>
   </div>
+  </div>
 </div>
+
+<!-- 수신 진행 팝업(10-01 v3) — flex.team 북마클릿이 보내는 동안 이 창에 띄운다(#collect 로 열리거나 진행 메시지가 오면) -->
+<div id="flex-modal" role="dialog" aria-modal="true" aria-labelledby="fm-title"><div class="fm">
+  <div class="fm-h"><div class="fm-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg></div><div><div class="fm-t" id="fm-title">Flex 에서 구성원을 받는 중</div><div class="fm-s" id="fm-s">flex.team 탭의 북마크가 목록을 읽어 보내고 있습니다</div></div></div>
+  <div class="fm-steps">
+    <div class="fs" id="fs-1"><span class="ic">1</span><div class="tx">구성원 목록 요청 잡기<div class="sub" id="fs-1s"></div></div></div>
+    <div class="fs" id="fs-2"><span class="ic">2</span><div class="tx">끝까지 읽기<div class="sub" id="fs-2s"></div></div></div>
+    <div class="fm-bar indet" id="fm-bar"><i></i></div>
+    <div class="fs" id="fs-3"><span class="ic">3</span><div class="tx">이 창으로 보내기<div class="sub" id="fs-3s"></div></div></div>
+  </div>
+  <div class="fm-f"><span id="fm-note">창을 닫지 마세요 · Flex 데이터는 브라우저 안에서만 오갑니다</span><span class="sp"></span><button class="btn sm" onclick="fmHide()">닫기</button></div>
+</div></div>
 
 <script type="text/plain" id="hfs-collector">
 (async () => {
@@ -207,23 +308,27 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
   var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin;
   if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
   if (window.__hfsRun) { try { window.__hfsRun.focus(); } catch (e) {} return; }
-  var hfsWin = window.open(HFS, 'hfs');
+  var hfsWin = window.open(HFS + '#collect', 'hfs');
   window.__hfsRun = hfsWin || true;
+  var prog = function (stage, extra) { try { if (hfsWin && !hfsWin.closed) hfsWin.postMessage(Object.assign({ type: 'hfs-flex-progress', stage: stage }, extra || {}), ORG); } catch (e) {} };
   var esc = function (s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
   var diag = [];
   var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
   var box = document.getElementById('__hfs_box');
-  if (!box) { box = document.createElement('div'); box.id = '__hfs_box'; box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#101B34;color:#fff;font:13px/1.5 "Segoe UI",sans-serif;padding:12px 16px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:420px'; document.body.appendChild(box); }
+  if (!box) { box = document.createElement('div'); box.id = '__hfs_box'; box.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483647;background:#fff;color:#1f2937;font:13px/1.5 "Segoe UI","Malgun Gothic",sans-serif;padding:14px 16px 12px;border-radius:12px;box-shadow:0 12px 40px rgba(15,39,68,.28);border:1px solid #e5e7eb;width:360px;max-width:92vw'; document.body.appendChild(box); }
+  var pct = 0;
   var say = function (t, bad) {
-    box.innerHTML = '<b style="color:#8fd3ff">HFS 수집</b> <span' + (bad ? ' style="color:#ffb4b4"' : '') + '>' + t + '</span>' +
-      '<div style="margin-top:6px;font-size:11px;color:#9fb3c8"><a href="#" id="__hfs_diag" style="color:#9fb3c8">진단 내용 복사</a> · <a href="#" id="__hfs_close" style="color:#9fb3c8">닫기</a></div>';
+    box.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="width:28px;height:28px;border-radius:8px;background:#e8f1fb;color:#0078d4;display:inline-flex;align-items:center;justify-content:center;flex:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg></span><b style="font-size:13px;color:#0f2744">HFS 수집</b></div>' +
+      '<div style="font-size:12.5px;line-height:1.55;color:' + (bad ? '#a4262c' : '#374151') + '">' + t + '</div>' +
+      '<div style="height:5px;background:#eef0f3;border-radius:5px;overflow:hidden;margin:9px 0 8px"><i style="display:block;height:100%;width:' + (pct || 0) + '%;background:linear-gradient(90deg,#3b82f6,#0078d4);transition:width .3s"></i></div>' +
+      '<div style="font-size:11px;color:#9ca3af;display:flex;gap:10px"><a href="#" id="__hfs_diag" style="color:#6b7280">진단 내용 복사</a><a href="#" id="__hfs_close" style="color:#6b7280;margin-left:auto">닫기</a></div>';
     box.querySelector('#__hfs_diag').onclick = function (e) { e.preventDefault(); var txt = diag.join('\n'); try { navigator.clipboard.writeText(txt).then(function () { e.target.textContent = '복사했습니다 ✓'; }, function () { prompt('복사해 주세요', txt); }); } catch (x) { prompt('복사해 주세요', txt); } };
     box.querySelector('#__hfs_close').onclick = function (e) { e.preventDefault(); box.remove(); };
   };
   var done = function () { window.__hfsRun = null; };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var tval = function (t) { return t && typeof t === 'object' ? (t.value || t.count || t.total || 0) : (t || 0); };   /* total 이 {value:72,…} 꼴일 수 있다 */
-  say('준비 중…'); log('시작 ' + location.href);
+  say('준비 중…'); log('시작 ' + location.href); prog('capture');
   /* ① 요청 · 응답 가로채기 — fetch · XMLHttpRequest */
   var caps = [], liveRes = [];
   var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
@@ -255,10 +360,10 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
     scrollers().forEach(function (el) { el.scrollTop = Math.min(el.scrollTop + el.clientHeight * 0.9, el.scrollHeight); var last = el.lastElementChild; try { if (last && el.scrollTop + el.clientHeight >= el.scrollHeight - 5) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new Event('scroll', { bubbles: true })); });
     window.scrollBy(0, window.innerHeight * 0.9);
   };
-  say('목록을 아래로 내려 구성원 요청을 잡는 중… 안 잡히면 목록을 직접 조금 내려 주세요.');
+  pct = 5; say('목록을 아래로 내려 구성원 요청을 잡는 중… 안 잡히면 목록을 직접 조금 내려 주세요.');
   for (var i = 0; i < 120 && !caps.length; i++) { nudge(); await sleep(400); }
-  if (!caps.length) { say('구성원 목록 요청(search-users)을 못 봤습니다. 구성원 화면을 새로고침한 뒤(스크롤 내리기 전에) 다시 눌러 주세요.', 1); log('요청 못 잡음'); done(); return; }
-  var T = caps[0].req, R = caps[0].res;
+  if (!caps.length) { say('구성원 목록 요청(search-users)을 못 봤습니다. 구성원 화면을 새로고침한 뒤(스크롤 내리기 전에) 다시 눌러 주세요.', 1); log('요청 못 잡음'); prog('error', { text: '구성원 목록 요청을 못 잡았습니다 — Flex 화면을 새로고침한 뒤 북마크를 다시 눌러 주세요.' }); done(); return; }
+  var T = caps[0].req, R = caps[0].res; pct = 15; prog('read', { count: 0, total: tval(R && R.total) });
   var pathOf = function (u) { try { return new URL(u, location.href).pathname; } catch (e) { return u; } };
   var bodyObj = null; try { bodyObj = T.body ? JSON.parse(T.body) : null; } catch (e) {}
   log('요청 잡음: ' + T.method + ' ' + pathOf(T.url) + ' · 본문 ' + (bodyObj ? 'JSON(' + Object.keys(bodyObj).join(',') + ')' : (T.body ? '문자열' : '없음')) + ' · 헤더 ' + Object.keys(T.headers).join(','));
@@ -305,7 +410,7 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
       var cont = null, pages = 0, prevSize = -1;
       for (var pg = 0; pg < 100; pg++) {
         var j = add(await send(place(slot, cont))); pages++;
-        say('읽는 중… ' + users.size + (total ? ' / ' + total : '') + '명 (' + pages + '페이지)');
+        pct = total ? 15 + Math.round(70 * Math.min(1, users.size / total)) : 50; say('읽는 중… ' + users.size + (total ? ' / ' + total : '') + '명 (' + pages + '페이지)'); prog('read', { count: users.size, total: total, pages: pages });
         if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
         if (users.size === prevSize && pg > 0) throw new Error('같은 페이지가 되풀이됨');
         prevSize = users.size; cont = j.continuation;
@@ -316,19 +421,19 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
   if (!ok) {
     liveRes.splice(0).forEach(add);
     var last = -1, still = 0;
-    for (var k = 0; k < 300 && still < 10; k++) { nudge(); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } say('모으는 중… ' + users.size + (total ? ' / ' + total : '') + '명'); }
+    for (var k = 0; k < 300 && still < 10; k++) { nudge(); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } pct = total ? 15 + Math.round(70 * Math.min(1, users.size / total)) : 50; say('모으는 중… ' + users.size + (total ? ' / ' + total : '') + '명'); prog('read', { count: users.size, total: total, scroll: true }); }
     log('화면 내리며 모음: ' + users.size + '명');
   }
-  if (!users.size) { say('구성원을 하나도 못 읽었습니다. 구성원 화면을 새로고침한 뒤 다시 눌러 주세요.', 1); done(); return; }
+  if (!users.size) { say('구성원을 하나도 못 읽었습니다. 구성원 화면을 새로고침한 뒤 다시 눌러 주세요.', 1); prog('error', { text: '구성원을 하나도 못 읽었습니다 — Flex 화면을 새로고침한 뒤 다시 눌러 주세요.' }); done(); return; }
   /* ④ HFS 창으로 */
   var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false, waiting = false;
   var short = total && users.size < total ? '<br>⚠ Flex 전체 ' + total + '명 중 ' + users.size + '명 — 구성원 화면을 새로고침한 뒤(스크롤 내리기 전에) 다시 눌러 보세요.' : '';
   window.addEventListener('message', function (ev) {
     if (ev.origin !== ORG || !ev.data) return;
-    if (ev.data.type === 'hfs-flex-ack') { acked = true; say(users.size + '명을 HFS 로 보냈습니다 ✓ — HFS 창에서 이어서 하세요.' + short); log('HFS 받음'); done(); }
+    if (ev.data.type === 'hfs-flex-ack') { acked = true; pct = 100; say(users.size + '명을 HFS 로 보냈습니다 ✓ — HFS 창에서 이어서 하세요.' + short); log('HFS 받음'); done(); }
     else if (ev.data.type === 'hfs-flex-wait') waiting = true;
   });
-  say(users.size + (total ? ' / ' + total : '') + '명 읽음 — HFS 창으로 보내는 중…');
+  pct = 90; say(users.size + (total ? ' / ' + total : '') + '명 읽음 — HFS 창으로 보내는 중…'); prog('send', { count: users.size, total: total });
   for (var n = 0; n < 600 && !acked; n++) {
     if (!hfsWin || hfsWin.closed) { say('HFS 창이 닫혔습니다. 다시 눌러 주세요.', 1); done(); return; }
     try { hfsWin.postMessage(payload, ORG); } catch (e) {}
@@ -410,12 +515,14 @@ async function onFiles(files) {
 function onPaste() { const t = document.getElementById('paste').value; if (!t.trim()) return; const r = ingest(t, '붙여넣기'); afterIngest('붙여넣기: JSON ' + r.vals + '개 · ' + r.found + '명'); }
 function afterIngest(detail) {
   const m = document.getElementById('in-msg');
-  if (!USERS.size) { m.className = 'msg err'; m.textContent = '사용자 정보를 찾지 못했습니다 — search-users 응답이나 HAR 파일인지 확인해 주세요. (' + detail + ')'; return; }
+  if (!USERS.size) { m.className = 'status err'; m.textContent = '사용자 정보를 찾지 못했습니다 — search-users 응답이나 HAR 파일인지 확인해 주세요. (' + detail + ')'; return; }
   const total = [...USERS.values()].length;
-  m.className = 'msg ok'; m.textContent = '✓ 누적 ' + total + '명 (' + detail + ')';
+  m.className = 'status ok'; m.textContent = '✓ ' + total + '명 — ' + detail;
   build();
 }
-function resetAll() { USERS = new Map(); CMP = null; ROWS = []; document.getElementById('paste').value = ''; document.getElementById('in-msg').textContent = ''; document.getElementById('cmp-msg').textContent = ''; ['map-card', 'out-card'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+function resetAll() { USERS = new Map(); CMP = null; ROWS = []; document.getElementById('paste').value = ''; ['in-msg', 'cmp-msg'].forEach(id => { const el = document.getElementById(id); el.textContent = ''; el.className = 'status'; }); ['map-card', 'out-card'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+function showTab(t) { ['auto', 'file'].forEach(k => { document.getElementById('pane-' + k).classList.toggle('hidden', k !== t); document.getElementById('tab-' + k).classList.toggle('on', k === t); }); }
+function toggleConsole(ev) { ev.preventDefault(); document.getElementById('console-box').classList.toggle('hidden'); }
 
 /* ── 변환 ─────────────────────────────────────────────── */
 const cap = s => String(s || '').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
@@ -474,18 +581,25 @@ function convert() {
 
 /* ── 화면 ─────────────────────────────────────────────── */
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/* 매핑 — 본부(Department)별 카드에 팀을 모아 보여 준다. 미지정 팀은 맨 앞 노란 카드에 */
 function renderMap() {
   const teams = {}; [...USERS.values()].forEach(u => { const pos = (u.employeeInfo && u.employeeInfo.positions) || []; const p = pos.find(x => x.isPrimary) || pos[0]; if (p) teams[p.departmentName] = (teams[p.departmentName] || 0) + 1; });
-  const headTeams = new Set(); [...USERS.values()].forEach(u => ((u.employeeInfo && u.employeeInfo.positions) || []).forEach(p => { if (p.isHeadUser) headTeams.add(p.departmentName); }));
+  const heads = {}; [...USERS.values()].forEach(u => ((u.employeeInfo && u.employeeInfo.positions) || []).forEach(p => { if (p.isHeadUser && !heads[p.departmentName]) heads[p.departmentName] = u.basicInfo && (u.basicInfo.displayName || u.basicInfo.name) || ''; }));
   const deptOpts = [...new Set([...DEPT_ORDER, ...Object.values(MAP)])];
-  const names = Object.keys(teams).filter(t => !(t === ROOT) && !(deptOpts.includes(t) && !MAP[t] ))
-    .sort((a, b) => (MAP[a] ? 1 : 0) - (MAP[b] ? 1 : 0) || deptOpts.indexOf(MAP[a]) - deptOpts.indexOf(MAP[b]) || a.localeCompare(b));
-  document.getElementById('map-grid').innerHTML = names.map(t => {
-    const v = MAP[t] || '';
-    return '<div class="map-row' + (v ? '' : ' unk') + '"><span class="t" title="' + esc(t) + '">' + esc(t) + ' <span class="c">' + teams[t] + '명</span></span>' +
-      '<select onchange="setMap(this.dataset.t,this.value)" data-t="' + esc(t) + '"><option value="">— 지정 —</option>' +
-      [...deptOpts, '(팀 이름 그대로)'].map(d => '<option' + (d === v ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select></div>';
+  const names = Object.keys(teams).filter(t => !(t === ROOT) && !(deptOpts.includes(t) && !MAP[t]));
+  const groups = {}; names.forEach(t => { const d = MAP[t] || ''; (groups[d] = groups[d] || []).push(t); });
+  const order = ['', ...deptOpts.filter(d => groups[d]), ...Object.keys(groups).filter(d => d && !deptOpts.includes(d))];
+  const sel = t => '<select onchange="setMap(this.dataset.t,this.value)" data-t="' + esc(t) + '"><option value="">— 지정 —</option>' +
+    [...deptOpts, '(팀 이름 그대로)'].map(d => '<option' + (d === (MAP[t] || '') ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select>';
+  document.getElementById('map-grid').innerHTML = order.filter(d => groups[d] && groups[d].length).map(d => {
+    const list = groups[d].sort((a, b) => a.localeCompare(b));
+    const n = list.reduce((x, t) => x + teams[t], 0);
+    return '<div class="dept' + (d ? '' : ' unk') + '"><div class="dept-h"><span class="dot"></span>' + (d ? esc(d) : '미지정 — 본부를 골라 주세요') +
+      '<span class="c">' + list.length + '팀 · ' + n + '명' + (d && heads[d] ? ' · 본부장 ' + esc(heads[d]) : '') + '</span></div>' +
+      list.map(t => '<div class="team"><span class="n" title="' + esc(t) + '">' + esc(t) + (heads[t] ? '<span class="lead">팀장 ' + esc(heads[t]) + '</span>' : '') + '</span><span class="c">' + teams[t] + '명</span>' + sel(t) + '</div>').join('') + '</div>';
   }).join('');
+  const unk = (groups[''] || []).length, nd = Object.keys(groups).filter(d => d).length;
+  document.getElementById('map-sum').innerHTML = '<span class="sum">본부 <b>' + nd + '</b></span><span class="sum">팀 <b>' + names.length + '</b></span><span class="sum' + (unk ? ' warn' : '') + '">미지정 <b>' + unk + '</b></span>';
 }
 function setMap(team, dept) { if (!dept) delete MAP[team]; else MAP[team] = dept === '(팀 이름 그대로)' ? team : dept; ls.set(LS_MAP, JSON.stringify(MAP)); build(); }
 function saveOvr() { ls.set(LS_OVR, document.getElementById('ovr').value); }
@@ -501,7 +615,7 @@ function build() {
   const st = [['전체', ROWS.length], ['본부', new Set(ROWS.map(r => r.Department)).size], ['팀', new Set(ROWS.map(r => r.Team)).size],
     ['휴직', all.filter(r => r._loa).length], ['계약직', all.filter(r => r._ext).length], ['확인 필요', warns.length, warns.length > 0]];
   document.getElementById('stats').innerHTML = st.map(([l, n, w]) => '<div class="stat' + (w ? ' warn' : '') + '"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>').join('');
-  document.getElementById('out-sub').textContent = warns.length ? '⚠ 노란 줄을 확인하세요(매핑 없음 · 팀장 없음)' : '';
+  document.getElementById('out-sub').innerHTML = warns.length ? '<span class="sum warn">확인 필요 <b>' + warns.length + '</b> — 노란 줄(매핑 없음 · 팀장 없음)</span>' : '<span class="sum">확인 필요 <b>0</b></span>';
   renderTable();
 }
 function renderTable() {
@@ -513,7 +627,7 @@ function renderTable() {
       + (r._loa ? '<span class="pill p-loa">휴직</span>' : '') + (r._ext ? '<span class="pill p-ext">계약직</span>' : '') + (r._warn ? '<span class="pill p-chg">' + r._warn + '</span>' : '');
     let diff = '';
     if (cm) { const o = cm[r.EMail]; if (!o) diff = '<span class="pill p-new">신규</span>'; else { const ch = H.filter(h => h !== 'WMC_old' && String(o[h] || '').trim() !== String(r[h] || '').trim()); diff = ch.length ? ch.map(h => '<div><b>' + h + '</b> <span class="chg-old">' + esc(o[h] || '(빈칸)') + '</span> → <span class="chg-new">' + esc(r[h]) + '</span></div>').join('') : '<span style="color:#a19f9d">같음</span>'; } }
-    return '<tr class="' + (r._kind === 'rd' || r._kind === 'fl' ? 'fl lead' : r._kind === 'tl' ? 'lead' : '') + '"' + (r._warn ? ' style="background:#fdf6e3"' : '') + '><td style="color:#a19f9d">' + (i + 1) + '</td>' +
+    return '<tr class="' + (r._kind === 'rd' || r._kind === 'fl' ? 'fl lead' : r._kind === 'tl' ? 'lead' : '') + (r._warn ? ' warnrow' : '') + '"><td style="color:#9ca3af">' + (i + 1) + '</td>' +
       H.map(h => '<td>' + esc(r[h]) + '</td>').join('') + '<td>' + esc(r._ko) + ' · ' + esc(r._title) + tag + '</td>' + (cm ? '<td style="white-space:normal;min-width:220px">' + diff + '</td>' : '') + '</tr>';
   }).join('');
   let tail = '';
@@ -525,13 +639,13 @@ async function onCompare(file) { if (file) applyCompare(file.name, await file.ar
 async function compareWithDb() {
   const m = document.getElementById('cmp-msg');
   try {
-    m.className = 'msg'; m.textContent = 'STK-DB 의 employee_search.xlsx 를 읽는 중…';
+    m.className = 'status'; m.textContent = 'STK-DB 의 employee_search.xlsx 를 읽는 중…';
     const d = await _getLogDriveId(); if (!d) throw new Error('STK-DB 드라이브를 찾지 못했습니다');
     const t = await token();
     const res = await fetch(GRAPH + '/drives/' + d + '/root:/employee_search.xlsx:/content', { headers: { Authorization: 'Bearer ' + t }, cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     applyCompare('STK-DB employee_search.xlsx', await res.arrayBuffer());
-  } catch (e) { m.className = 'msg err'; m.textContent = '현재 명부를 읽지 못했습니다: ' + e.message; }
+  } catch (e) { m.className = 'status err'; m.textContent = '현재 명부를 읽지 못했습니다: ' + e.message; }
 }
 function applyCompare(name, buf) {
   const wb = XLSX.read(buf, { type: 'array' });
@@ -540,7 +654,7 @@ function applyCompare(name, buf) {
   CMP = { name, byEmail };
   const nNew = ROWS.filter(r => !byEmail[r.EMail]).length, nGone = Object.keys(byEmail).filter(e => !ROWS.some(r => r.EMail === e)).length;
   const nChg = ROWS.filter(r => byEmail[r.EMail] && ['Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].some(h => String(byEmail[r.EMail][h] || '').trim() !== String(r[h]).trim())).length;
-  const m = document.getElementById('cmp-msg'); m.className = 'msg warn';
+  const m = document.getElementById('cmp-msg'); m.className = 'status warn';
   m.textContent = name + ' (' + rows.length + '명) 와 비교 — 신규 ' + nNew + ' · 바뀜 ' + nChg + ' · 빠짐 ' + nGone + '. 오른쪽 「기존 대비」 열에서 확인하세요.';
   renderTable();
 }
@@ -635,7 +749,9 @@ async function boot(account) {
   document.getElementById('who-name').textContent = (user.name || '') + ' · ' + (me[0] || '');
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.remove('hidden');
-  _authorized = true; flexInboxFlush();   // 로그인 전에 flex.team 북마클릿이 보낸 목록이 있으면 지금 넣는다
+  _authorized = true;
+  if (_flexInbox) flexInboxFlush();                                   // 로그인 전에 flex.team 북마클릿이 보낸 목록이 있으면 지금 넣는다
+  else if (location.hash === '#collect' || _fmLast) { fmShow(); fmSet(_fmLast || { stage: 'capture' }); }   // 북마클릿이 연 창 — 받는 중 팝업
 }
 function showDeny(html, contact) {
   document.getElementById('deny-text').innerHTML = html;
@@ -741,17 +857,44 @@ function logAction(action, detail) {
 const FLEX_ORIGIN = 'https://flex.team';
 let _flexInbox = null, _authorized = false;
 window.addEventListener('message', ev => {
-  if (ev.origin !== FLEX_ORIGIN || !ev.data || ev.data.type !== 'hfs-flex-users' || !Array.isArray(ev.data.users)) return;
+  if (ev.origin !== FLEX_ORIGIN || !ev.data) return;
+  if (ev.data.type === 'hfs-flex-progress') { _fmLast = ev.data; if (_authorized) fmSet(ev.data); return; }
+  if (ev.data.type !== 'hfs-flex-users' || !Array.isArray(ev.data.users)) return;
   _flexInbox = ev.data;
   if (_authorized) { const n = flexInboxFlush(); try { ev.source.postMessage({ type: 'hfs-flex-ack', count: n }, ev.origin); } catch (e) {} }
   else { try { ev.source.postMessage({ type: 'hfs-flex-wait' }, ev.origin); } catch (e) {} }
 });
+/* 수신 진행 팝업 — 북마클릿이 #collect 로 이 창을 열면 바로 띄우고, 진행 메시지(capture → read → send)로 단계를 옮긴다. 데이터가 들어오면 완료 표시 뒤 닫는다 */
+let _fmLast = null, _fmTimer = null, _fmShown = false;
+function fmShow() { document.getElementById('flex-modal').classList.add('show'); _fmShown = true; fmWatch(); }
+function fmHide() { document.getElementById('flex-modal').classList.remove('show'); _fmShown = false; clearTimeout(_fmTimer); }
+function fmWatch() { clearTimeout(_fmTimer); _fmTimer = setTimeout(() => { if (_fmShown) fmSet({ stage: 'error', text: 'flex.team 탭에서 진행 상자를 확인해 주세요 — 2분 동안 소식이 없습니다.' }); }, 120000); }
+function fmSet(d) {
+  if (!_fmShown && d.stage !== 'done') fmShow(); else fmWatch();
+  const st = ['fs-1', 'fs-2', 'fs-3'], idx = { capture: 0, read: 1, send: 2, done: 3, error: -1 }[d.stage];
+  const cur = d.stage === 'error' ? (_fmLastIdx == null ? 0 : _fmLastIdx) : idx; if (d.stage !== 'error') _fmLastIdx = idx;
+  st.forEach((id, i) => { const el = document.getElementById(id); el.className = 'fs' + (i < cur ? ' done' : i === cur ? (d.stage === 'error' ? ' bad' : ' act') : ''); el.querySelector('.ic').textContent = i < cur ? '✓' : (d.stage === 'error' && i === cur ? '!' : String(i + 1)); });
+  const bar = document.getElementById('fm-bar'), tot = d.total || 0, cnt = d.count || 0;
+  if (d.stage === 'read' && tot) { bar.classList.remove('indet'); bar.firstElementChild.style.width = Math.min(100, Math.round(cnt / tot * 100)) + '%'; }
+  else if (d.stage === 'send' || d.stage === 'done') { bar.classList.remove('indet'); bar.firstElementChild.style.width = '100%'; }
+  else if (d.stage === 'capture') { bar.classList.add('indet'); }
+  document.getElementById('fs-2s').textContent = d.stage === 'read' ? (cnt + (tot ? ' / ' + tot : '') + '명' + (d.pages ? ' · ' + d.pages + '페이지' : '') + (d.scroll ? ' · 화면을 내리며 모으는 중' : '')) : (idx > 1 ? (cnt ? cnt + (tot ? ' / ' + tot : '') + '명' : '') : '');
+  document.getElementById('fs-1s').textContent = d.stage === 'capture' ? 'Flex 목록을 아래로 내려 요청을 기다리는 중' : (idx > 0 ? '잡았습니다' : '');
+  document.getElementById('fs-3s').textContent = d.stage === 'send' ? '받는 중…' : (d.stage === 'done' ? (d.count + '명을 받았습니다') : '');
+  const s = document.getElementById('fm-s'), note = document.getElementById('fm-note');
+  if (d.stage === 'error') { s.textContent = '중단되었습니다'; note.textContent = d.text || '오류'; note.style.color = '#a4262c'; clearTimeout(_fmTimer); }
+  else if (d.stage === 'done') { s.textContent = '완료 — 아래 표에서 이어서 확인하세요'; note.textContent = ''; setTimeout(fmHide, 1400); }
+  else { s.textContent = 'flex.team 탭의 북마크가 목록을 읽어 보내고 있습니다'; note.textContent = '창을 닫지 마세요 · Flex 데이터는 브라우저 안에서만 오갑니다'; note.style.color = ''; }
+}
+let _fmLastIdx = null;
 function flexInboxFlush() {
   if (!_flexInbox) return 0;
   const d = _flexInbox; _flexInbox = null; let n = 0;
   d.users.forEach(u => { const e = u && u.basicInfo && u.basicInfo.email; if (!e) return; USERS.set(String(e).trim().toLowerCase(), u); n++; });
   const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (d.total || 0);
   afterIngest('Flex 자동 수집 ' + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+  fmSet({ stage: 'done', count: n, total: tot });
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}   // #collect 를 지워 새로고침 때 팝업이 다시 뜨지 않게
   try { window.focus(); } catch (e) {}
   return n;
 }
@@ -762,7 +905,7 @@ function bmSetup() {
   document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(src);
   document.getElementById('bm-src').value = src;
 }
-function bmClick(ev) { ev.preventDefault(); const m = document.getElementById('bm-msg'); m.textContent = '이 단추를 북마크 바에 끌어다 놓은 뒤, flex.team 구성원 화면에서 눌러 주세요.'; setTimeout(() => { m.textContent = ''; }, 6000); }
+function bmClick(ev) { ev.preventDefault(); const m = document.getElementById('bm-msg'); m.textContent = '← 북마크 바에 끌어다 놓은 뒤 flex.team 에서 누르세요'; setTimeout(() => { m.textContent = ''; }, 6000); }
 async function copyBm() { try { await navigator.clipboard.writeText(document.getElementById('bm-src').value); alert('복사했습니다 — flex.team 구성원 화면의 Console 에 붙여 넣고 Enter.'); } catch (e) { document.getElementById('bm-src').select(); alert('Ctrl+C 로 복사해 주세요.'); } }
 
 /* ── 시작 ─────────────────────────────────────────────── */
