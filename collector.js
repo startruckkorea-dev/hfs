@@ -8,7 +8,8 @@ try { hfsWin.focus(); } catch (e) {}
 window.__hfsRun = hfsWin;
 var diag = [], lastProg = null, finished = false;
 var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
-var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
+var V = 6;
+var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
 var beat = setInterval(function () { if (finished || !lastProg) return; if (hfsWin.closed) { clearInterval(beat); window.__hfsRun = null; return; } try { hfsWin.postMessage(lastProg, ORG); } catch (e) {} }, 1000);
 var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; };
 var fail = function (text) { log('실패: ' + text); prog('error', { text: text, diag: diag.join('\n') }); done(); };
@@ -16,7 +17,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
 var tval = function (t) { return t && typeof t === 'object' ? (t.value || t.count || t.total || 0) : (t || 0); };
 var pathOf = function (u) { try { return new URL(u, location.href).pathname; } catch (e) { return u; } };
 var F = window.fetch;
-log('시작 ' + location.href); prog('capture');
+log('시작 v' + V + ' ' + location.href); prog('capture');
 var users = new Map(), total = 0;
 var listOf = function (j) { return (j && (j.list || (j.data && j.data.list))) || []; };
 var emailsOf = function (j) { return listOf(j).map(function (u) { return u && u.basicInfo && u.basicInfo.email ? String(u.basicInfo.email).trim().toLowerCase() : ''; }).filter(Boolean); };
@@ -86,7 +87,7 @@ if (!complete()) throw new Error('전체 ' + total + '명 중 ' + users.size + '
 return true;
 };
 var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
-var installHook = function (w, caps, liveRes) {
+var installHook = function (w, sink) {
 var WF = w.fetch;
 w.fetch = async function (input, init) {
 var url = typeof input === 'string' ? input : (input && input.url) || '', pre = null;
@@ -95,7 +96,7 @@ try { var body = init && init.body; if (body == null && input && typeof input.cl
 pre = { url: new URL(url, w.location.href).href, method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(), headers: hdrs((init && init.headers) || (input && input.headers)), body: typeof body === 'string' ? body : null }; } catch (e) {}
 }
 var res = await WF.apply(this, arguments);
-if (pre) { try { res.clone().json().then(function (j) { caps.push({ req: pre, res: j }); liveRes.push(j); }).catch(function () {}); } catch (e) {} }
+if (pre) { try { res.clone().json().then(function (j) { var k = sink(); k.caps.push({ req: pre, res: j }); k.liveRes.push(j); }).catch(function () {}); } catch (e) {} }
 return res;
 };
 var X = w.XMLHttpRequest.prototype, XO = X.open, XS = X.send, XH = X.setRequestHeader;
@@ -103,7 +104,7 @@ X.open = function (m, u) { this.__hfs = { method: String(m).toUpperCase(), url: 
 X.setRequestHeader = function (k, v) { if (this.__hfs) this.__hfs.headers[k] = v; return XH.apply(this, arguments); };
 X.send = function (b) {
 var r = this.__hfs, x = this;
-if (r && /search-users/i.test(r.url)) { r.body = typeof b === 'string' ? b : null; x.addEventListener('load', function () { try { var j = JSON.parse(x.responseText); caps.push({ req: r, res: j }); liveRes.push(j); } catch (e) {} }); }
+if (r && /search-users/i.test(r.url)) { r.body = typeof b === 'string' ? b : null; x.addEventListener('load', function () { try { var j = JSON.parse(x.responseText); var k = sink(); k.caps.push({ req: r, res: j }); k.liveRes.push(j); } catch (e) {} }); }
 return XS.apply(this, arguments);
 };
 };
@@ -111,13 +112,15 @@ var scrollersOf = function (doc) { return Array.prototype.filter.call(doc.queryS
 var nudgeIn = function (w) {
 try { scrollersOf(w.document).forEach(function (el) { el.scrollTop = Math.min(el.scrollTop + el.clientHeight * 0.9, el.scrollHeight); var last = el.lastElementChild; try { if (last && el.scrollTop + el.clientHeight >= el.scrollHeight - 5) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new w.Event('scroll', { bubbles: true })); }); w.scrollBy(0, w.innerHeight * 0.9); } catch (e) {}
 };
-var freshCapture = function (caps, liveRes) {
+var frame = null;
+var closeFrame = function () { try { if (frame) frame.remove(); } catch (e) {} frame = null; };
+var freshCapture = function (sink) {
 return new Promise(function (resolve) {
 var fr = document.createElement('iframe'), finished2 = false, blocked = false, hookedDoc = null, t0 = Date.now();
 fr.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms');
-fr.setAttribute('aria-hidden', 'true');
-fr.style.cssText = 'position:fixed;left:-12000px;top:0;width:1100px;height:800px;opacity:0;pointer-events:none;border:0';
-var end = function () { if (finished2) return; finished2 = true; clearInterval(iv); try { fr.remove(); } catch (e) {} resolve(); };
+fr.setAttribute('aria-hidden', 'true'); fr.setAttribute('tabindex', '-1');
+fr.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;opacity:0;pointer-events:none;border:0;z-index:-1';
+var end = function () { if (finished2) return; finished2 = true; clearInterval(iv); if (blocked || !hookedDoc) { try { fr.remove(); } catch (e) {} } else frame = fr; resolve(); };
 fr.addEventListener('load', function () { try { if (!fr.contentDocument) blocked = true; } catch (e) { blocked = true; } });
 document.body.appendChild(fr);
 fr.src = location.origin + '/people/users';
@@ -125,25 +128,28 @@ var iv = setInterval(function () {
 var now = Date.now() - t0;
 try {
 var w = fr.contentWindow;
-if (w && w.document && w.document !== hookedDoc && /people/.test(w.location.pathname)) { installHook(w, caps, liveRes); hookedDoc = w.document; log('iframe 가로채기 설치(' + w.document.readyState + ', ' + now + 'ms)'); }
-if (hookedDoc && now > 2500 && caps.length < 2) nudgeIn(w);
+if (w && w.document && w.document !== hookedDoc && /people/.test(w.location.pathname)) { installHook(w, sink); hookedDoc = w.document; log('iframe 가로채기 설치(' + w.document.readyState + ', ' + now + 'ms)'); }
+if (hookedDoc && now > 2500 && sink().caps.length < 2) nudgeIn(w);
 } catch (e) {}
-if (caps.length >= 2 || (caps.length === 1 && now > 10000) || (blocked && now > 1500) || now > 22000) { log('iframe 잡기: ' + caps.length + '건' + (blocked ? ' · 막힘' : '')); end(); }
+var nc = sink().caps.length;
+if (nc >= 2 || (nc === 1 && now > 12000) || (blocked && now > 1500) || now > 22000) { log('iframe 잡기: ' + nc + '건' + (blocked ? ' · 막힘' : '')); end(); }
 }, 4);
 });
 };
-var tabCapture = async function (caps, liveRes) {
-installHook(window, caps, liveRes);
-for (var i = 0; i < 25 && !caps.length; i++) { nudgeIn(window); await sleep(400); }
-log('탭 잡기: ' + caps.length + '건');
+var hookTab = function () { if (!window.__hfsHooked) { installHook(window, function () { return window.__hfsSink; }); window.__hfsHooked = true; } };
+var tabCapture = async function (sink) {
+hookTab();
+for (var i = 0; i < 25 && !sink().caps.length; i++) { nudgeIn(window); await sleep(400); }
+log('탭 잡기: ' + sink().caps.length + '건');
 };
 var ok = false;
 var T = loadTpl();
 if (T) { log('저장된 틀 사용: ' + T.method + ' ' + pathOf(T.url)); try { ok = await readAll(T); } catch (e) { log('저장된 틀 실패: ' + e.message + ' → 다시 잡는다'); dropTpl(); } }
 if (!ok) {
-var caps = [], liveRes = [];
-await freshCapture(caps, liveRes);
-if (!caps.length) await tabCapture(caps, liveRes);
+var caps = [], liveRes = [], sink = function () { return window.__hfsSink; };
+window.__hfsSink = { caps: caps, liveRes: liveRes };
+await freshCapture(sink);
+if (!caps.length) await tabCapture(sink);
 if (!caps.length) { fail('Flex 구성원 목록을 불러오지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
 var tokish = function (v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{20,}$/.test(v); };
 var reqHasTok = function (q) {
@@ -157,12 +163,15 @@ var C = pick.req, R = pick.res;
 var bodyObj = null; try { bodyObj = C.body ? JSON.parse(C.body) : null; } catch (e) {}
 log('요청: ' + C.method + ' ' + pathOf(C.url) + ' · 본문 ' + (bodyObj ? 'JSON(' + Object.keys(bodyObj).join(',') + ')' : (C.body ? '문자열' : '없음')) + ' · 헤더 ' + Object.keys(C.headers).join(','));
 log('응답: list ' + listOf(R).length + ' · hasNext ' + (R && R.hasNext) + ' · total ' + tval(R && R.total));
-var cands = [];
-(function walk(o, path) { if (!o || typeof o !== 'object') return; Object.keys(o).forEach(function (k) { var v = o[k], p = path.concat(k); if (tokish(v)) cands.push({ kind: 'body', path: p }); else if (v && typeof v === 'object') walk(v, p); }); })(bodyObj, []);
-try { new URL(C.url, location.href).searchParams.forEach(function (v, k) { if (tokish(v)) cands.push({ kind: 'query', key: k }); }); } catch (e) {}
-Object.keys(C.headers).forEach(function (k) { if (!/^(authorization|cookie|x-csrf|content|accept|user-agent)/i.test(k) && tokish(C.headers[k])) cands.push({ kind: 'header', key: k }); });
-if (bodyObj && !cands.some(function (c) { return c.kind === 'body' && c.path.length === 1 && c.path[0] === 'continuation'; })) cands.push({ kind: 'body', path: ['continuation'] });
-cands.push({ kind: 'query', key: 'continuation' });
+var cands = [], keyish = /continu|cursor|next|after|page.?token/i, seen = {};
+var push = function (c) { var id = c.kind + ':' + (c.path ? c.path.join('.') : c.key); if (!seen[id]) { seen[id] = 1; cands.push(c); } };
+(function walk(o, path) { if (!o || typeof o !== 'object') return; Object.keys(o).forEach(function (k) { var v = o[k], p = path.concat(k); if (tokish(v)) push({ kind: 'body', path: p }); else if (v && typeof v === 'object') walk(v, p); }); })(bodyObj, []);
+(function walk(o, path) { if (!o || typeof o !== 'object') return; Object.keys(o).forEach(function (k) { var v = o[k], p = path.concat(k); if (keyish.test(k) && (v == null || typeof v !== 'object')) push({ kind: 'body', path: p }); else if (v && typeof v === 'object') walk(v, p); }); })(bodyObj, []);
+try { new URL(C.url, location.href).searchParams.forEach(function (v, k) { if (tokish(v) || keyish.test(k)) push({ kind: 'query', key: k }); }); } catch (e) {}
+Object.keys(C.headers).forEach(function (k) { if (!/^(authorization|cookie|x-csrf|content|accept|user-agent)/i.test(k) && (tokish(C.headers[k]) || keyish.test(k))) push({ kind: 'header', key: k }); });
+(function walk(o, path) { if (!o || typeof o !== 'object') return; Object.keys(o).forEach(function (k) { var v = o[k], p = path.concat(k); if (v === null) push({ kind: 'body', path: p }); else if (v && typeof v === 'object') walk(v, p); }); })(bodyObj, []);
+if (bodyObj) push({ kind: 'body', path: ['continuation'] });
+push({ kind: 'query', key: 'continuation' });
 var cname = function (c) { return c.kind === 'body' ? '본문 ' + c.path.join('.') : c.kind === 'query' ? 'query ' + c.key : '헤더 ' + c.key; };
 var slot = null, known = emailsOf(R);
 for (var ci = 0; ci < cands.length && !slot; ci++) {
@@ -177,11 +186,12 @@ log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 �
 if (slot) { C.slot = slot; try { ok = await readAll(C); saveTpl(C, slot); } catch (e) { log('읽기 실패: ' + e.message); } }
 if (!ok) {
 users = new Map(); total = 0; liveRes.splice(0).forEach(add);
-installHook(window, caps, liveRes);
+hookTab();
 var last = -1, still = 0;
-for (var k = 0; k < 100 && still < 8 && !complete(); k++) { nudgeIn(window); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } prog('read', { count: users.size, total: total, scroll: true }); }
+for (var k = 0; k < 150 && still < 10 && !complete(); k++) { if (frame) nudgeIn(frame.contentWindow); nudgeIn(window); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } prog('read', { count: users.size, total: total, scroll: true }); }
 log('모음: ' + users.size + '명' + (total ? ' / ' + total : ''));
 }
+closeFrame();
 }
 if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
 var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false;
