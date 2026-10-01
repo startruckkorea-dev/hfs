@@ -8,7 +8,7 @@ try { hfsWin.focus(); } catch (e) {}
 window.__hfsRun = hfsWin;
 var diag = [], lastProg = null, finished = false;
 var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
-var V = 9, RID = Math.random().toString(36).slice(2);
+var V = 10, RID = Math.random().toString(36).slice(2);
 var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, rid: RID, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
 var beat = setInterval(function () { if (finished || !lastProg) return; if (hfsWin.closed) { clearInterval(beat); window.__hfsRun = null; return; } try { hfsWin.postMessage(lastProg, ORG); } catch (e) {} }, 1000);
 var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; };
@@ -192,14 +192,14 @@ var lastNext = true; caps.forEach(function (c) { if (c.res && c.res.hasNext === 
 var toBottom = function (w) { try { scrollersOf(w.document).forEach(function (el) { el.scrollTop = el.scrollHeight; var last = el.lastElementChild; try { if (last) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new w.Event('scroll', { bubbles: true })); }); w.scrollTo(0, w.document.documentElement.scrollHeight); } catch (e) {} };
 var idle = 0, t0 = Date.now(), retry = 0;
 for (;;) {
-while (Date.now() - t0 < 240000 && !complete() && lastNext && idle < 4) {
+while (Date.now() - t0 < 600000 && !complete() && lastNext && idle < 4) {
 if (frame) toBottom(frame.contentWindow); toBottom(window);
 var before = users.size, got = false;
 for (var w8 = 0; w8 < 25; w8++) { await sleep(200); var nr = liveRes.splice(0); if (nr.length) { nr.forEach(function (j) { add(j); if (j && j.hasNext === false) lastNext = false; }); got = true; break; } }
-if (got && users.size > before) idle = 0; else idle++;
-prog('read', { count: users.size, total: total, scroll: true });
+if (got && users.size > before) idle = 0; else if (!document.hidden) idle++;
+prog('read', { count: users.size, total: total, scroll: true, hidden: !!document.hidden });
 }
-if (complete() || retry >= 2 || Date.now() - t0 > 200000) break;
+if (complete() || retry >= 2 || Date.now() - t0 > 500000) break;
 retry++; log('모자람(' + users.size + '/' + total + ') → iframe 다시 ' + retry);
 closeFrame(); var c0 = caps.length; await freshCapture(sink); caps.slice(c0).forEach(function (c) { add(c.res); }); liveRes.splice(0);
 lastNext = true; idle = 0;
