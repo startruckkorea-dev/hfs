@@ -8,8 +8,8 @@ try { hfsWin.focus(); } catch (e) {}
 window.__hfsRun = hfsWin;
 var diag = [], lastProg = null, finished = false;
 var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
-var V = 8;
-var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
+var V = 9, RID = Math.random().toString(36).slice(2);
+var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, rid: RID, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
 var beat = setInterval(function () { if (finished || !lastProg) return; if (hfsWin.closed) { clearInterval(beat); window.__hfsRun = null; return; } try { hfsWin.postMessage(lastProg, ORG); } catch (e) {} }, 1000);
 var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; };
 var fail = function (text) { log('실패: ' + text); prog('error', { text: text, diag: diag.join('\n') }); done(); };
@@ -190,7 +190,8 @@ users = new Map(); total = 0; caps.forEach(function (c) { add(c.res); }); liveRe
 hookTab();
 var lastNext = true; caps.forEach(function (c) { if (c.res && c.res.hasNext === false) lastNext = false; });
 var toBottom = function (w) { try { scrollersOf(w.document).forEach(function (el) { el.scrollTop = el.scrollHeight; var last = el.lastElementChild; try { if (last) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new w.Event('scroll', { bubbles: true })); }); w.scrollTo(0, w.document.documentElement.scrollHeight); } catch (e) {} };
-var idle = 0, t0 = Date.now();
+var idle = 0, t0 = Date.now(), retry = 0;
+for (;;) {
 while (Date.now() - t0 < 240000 && !complete() && lastNext && idle < 4) {
 if (frame) toBottom(frame.contentWindow); toBottom(window);
 var before = users.size, got = false;
@@ -198,13 +199,18 @@ for (var w8 = 0; w8 < 25; w8++) { await sleep(200); var nr = liveRes.splice(0); 
 if (got && users.size > before) idle = 0; else idle++;
 prog('read', { count: users.size, total: total, scroll: true });
 }
+if (complete() || retry >= 2 || Date.now() - t0 > 200000) break;
+retry++; log('모자람(' + users.size + '/' + total + ') → iframe 다시 ' + retry);
+closeFrame(); var c0 = caps.length; await freshCapture(sink); caps.slice(c0).forEach(function (c) { add(c.res); }); liveRes.splice(0);
+lastNext = true; idle = 0;
+}
 log('천천히 내리며 모음: ' + users.size + '명' + (total ? ' / ' + total : '') + ' · 마지막 페이지 ' + (!lastNext) + ' · ' + Math.round((Date.now() - t0) / 1000) + '초');
 if (best.size > users.size) { users = best; log('앞서 읽은 ' + best.size + '명을 쓴다'); }
 }
 closeFrame();
 }
 if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
-var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V }, acked = false;
+var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, rid: RID }, acked = false;
 window.addEventListener('message', function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } });
 log('보냄: ' + users.size + '명' + (total ? ' / ' + total : ''));
 prog('send', { count: users.size, total: total, partial: !complete() });
