@@ -530,7 +530,7 @@ tr.warnrow td{background:var(--warn-bg)}
   }
   if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
   /* ④ HFS 창으로 */
-  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false;
+  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V }, acked = false;
   window.addEventListener('message', function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } });
   prog('send', { count: users.size, total: total, partial: !complete() });
   for (var n = 0; n < 600 && !acked; n++) {
@@ -1007,7 +1007,8 @@ function flexInboxFlush() {
   const d = _flexInbox; _flexInbox = null; let n = 0;
   d.users.forEach(u => { const e = u && u.basicInfo && u.basicInfo.email; if (!e) return; USERS.set(String(e).trim().toLowerCase(), u); n++; });
   const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (d.total || 0);
-  afterIngest('Flex 자동 수집 ' + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+  afterIngest('Flex 자동 수집 ' + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + ' · 수집 코드 ' + (d.v ? 'v' + d.v : '예전 북마크'));
+  if (!d.v) { const m = document.getElementById('in-msg'); m.className = 'status warn'; m.textContent = '⚠ ' + n + '명 — 북마크가 예전 수집 코드로 돌았습니다. 북마크 바의 「HFS 수집」 을 지우고, 위 「HFS 수집」 단추를 다시 끌어다 놓은 뒤 Flex 에서 눌러 주세요.'; }
   fmSet({ stage: 'done', count: n, total: tot });
   try { sessionStorage.setItem('hfs.collected', '1'); } catch (e) {}   // 이 탭을 새로고침해도 받는 중 팝업이 다시 뜨지 않게
   try { window.focus(); } catch (e) {}

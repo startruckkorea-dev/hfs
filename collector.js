@@ -194,7 +194,7 @@ log('모음: ' + users.size + '명' + (total ? ' / ' + total : ''));
 closeFrame();
 }
 if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
-var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false;
+var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V }, acked = false;
 window.addEventListener('message', function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } });
 prog('send', { count: users.size, total: total, partial: !complete() });
 for (var n = 0; n < 600 && !acked; n++) {
