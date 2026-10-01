@@ -199,37 +199,46 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
 
 <script type="text/plain" id="hfs-collector">
 (async () => {
-  /* HFS 수집 — flex.team 구성원 화면에서 실행(북마클릿 · 콘솔). 구성원 목록 요청(search-users)을 한 번 잡아 같은 요청으로 첫 페이지부터
-     끝까지 다시 읽고, HFS 창으로 보낸다(postMessage — 서버로 가지 않음). 다시 읽기가 안 되면 화면을 끝까지 내리며 응답을 모은다. */
+  /* HFS 수집 v2 — flex.team 구성원 화면에서 실행(북마클릿 · 콘솔).
+     ① 구성원 목록 요청(search-users)과 그 응답을 한 번 잡는다(목록을 아래로 내려 일으킴).
+     ② 그 요청 안에서 continuation 이 실리는 자리(본문 JSON 의 어느 키 · 주소 query · 헤더)를 응답의 continuation 으로 실제로 보내 보며 찾는다.
+     ③ 자리를 찾으면 continuation 없이(첫 페이지) 보내고 응답의 continuation 을 따라 끝까지 읽는다. 못 찾으면 화면을 내리며 응답을 모은다.
+     ④ HFS 창으로 postMessage(브라우저 안에서만) — HFS 가 받았다고 답할 때까지 1초마다. 오른쪽 아래 상자에 진행 · 진단을 띄운다. */
   var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin;
   if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
   if (window.__hfsRun) { try { window.__hfsRun.focus(); } catch (e) {} return; }
-  var hfsWin = window.open(HFS, 'hfs');   /* 클릭 직후(await 전)에 열어야 팝업 차단에 안 걸린다 */
+  var hfsWin = window.open(HFS, 'hfs');
   window.__hfsRun = hfsWin || true;
-  var box = document.getElementById('__hfs_box');
-  if (!box) { box = document.createElement('div'); box.id = '__hfs_box'; box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#101B34;color:#fff;font:13px/1.5 "Segoe UI",sans-serif;padding:12px 16px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:380px'; document.body.appendChild(box); }
   var esc = function (s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
-  var say = function (t, bad) { box.innerHTML = '<b style="color:#8fd3ff">HFS 수집</b> <span' + (bad ? ' style="color:#ffb4b4"' : '') + '>' + t + '</span>'; };
+  var diag = [];
+  var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
+  var box = document.getElementById('__hfs_box');
+  if (!box) { box = document.createElement('div'); box.id = '__hfs_box'; box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#101B34;color:#fff;font:13px/1.5 "Segoe UI",sans-serif;padding:12px 16px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:420px'; document.body.appendChild(box); }
+  var say = function (t, bad) {
+    box.innerHTML = '<b style="color:#8fd3ff">HFS 수집</b> <span' + (bad ? ' style="color:#ffb4b4"' : '') + '>' + t + '</span>' +
+      '<div style="margin-top:6px;font-size:11px;color:#9fb3c8"><a href="#" id="__hfs_diag" style="color:#9fb3c8">진단 내용 복사</a> · <a href="#" id="__hfs_close" style="color:#9fb3c8">닫기</a></div>';
+    box.querySelector('#__hfs_diag').onclick = function (e) { e.preventDefault(); var txt = diag.join('\n'); try { navigator.clipboard.writeText(txt).then(function () { e.target.textContent = '복사했습니다 ✓'; }, function () { prompt('복사해 주세요', txt); }); } catch (x) { prompt('복사해 주세요', txt); } };
+    box.querySelector('#__hfs_close').onclick = function (e) { e.preventDefault(); box.remove(); };
+  };
   var done = function () { window.__hfsRun = null; };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-  say('준비 중…');
-  /* 1) 요청 가로채기 — fetch · XMLHttpRequest 둘 다 */
-  var seen = [], responses = [];
+  var tval = function (t) { return t && typeof t === 'object' ? (t.value || t.count || t.total || 0) : (t || 0); };   /* total 이 {value:72,…} 꼴일 수 있다 */
+  say('준비 중…'); log('시작 ' + location.href);
+  /* ① 요청 · 응답 가로채기 — fetch · XMLHttpRequest */
+  var caps = [], liveRes = [];
+  var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
   var F = window.fetch;
   window.fetch = async function (input, init) {
     var url = typeof input === 'string' ? input : (input && input.url) || '', pre = null;
     if (/search-users/i.test(url)) {
-      try {   /* 보내기 전에 본문을 복사해 둔다(보낸 뒤엔 Request 본문을 다시 읽을 수 없다) */
-        var h = {}, src = (init && init.headers) || (input && input.headers);
-        if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); }
-        var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      try {
         var body = init && init.body;
         if (body == null && input && typeof input.clone === 'function') { try { body = await input.clone().text(); } catch (e) {} }
-        pre = { url: url, method: method, headers: h, body: typeof body === 'string' ? body : null };
+        pre = { url: url, method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(), headers: hdrs((init && init.headers) || (input && input.headers)), body: typeof body === 'string' ? body : null };
       } catch (e) {}
     }
     var res = await F.apply(this, arguments);
-    if (pre) { seen.push(pre); try { res.clone().json().then(function (j) { responses.push(j); }).catch(function () {}); } catch (e) {} }
+    if (pre) { try { res.clone().json().then(function (j) { caps.push({ req: pre, res: j }); liveRes.push(j); }).catch(function () {}); } catch (e) {} }
     return res;
   };
   var XO = XMLHttpRequest.prototype.open, XS = XMLHttpRequest.prototype.send, XH = XMLHttpRequest.prototype.setRequestHeader;
@@ -237,56 +246,89 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
   XMLHttpRequest.prototype.setRequestHeader = function (k, v) { if (this.__hfs) this.__hfs.headers[k] = v; return XH.apply(this, arguments); };
   XMLHttpRequest.prototype.send = function (b) {
     var r = this.__hfs, x = this;
-    if (r && /search-users/i.test(r.url)) { r.body = typeof b === 'string' ? b : null; seen.push(r); x.addEventListener('load', function () { try { responses.push(JSON.parse(x.responseText)); } catch (e) {} }); }
+    if (r && /search-users/i.test(r.url)) { r.body = typeof b === 'string' ? b : null; x.addEventListener('load', function () { try { var j = JSON.parse(x.responseText); caps.push({ req: r, res: j }); liveRes.push(j); } catch (e) {} }); }
     return XS.apply(this, arguments);
   };
-  /* 2) 목록을 아래로 내려 요청을 한 번 일으킨다 */
+  /* ② 목록을 아래로 — 스크롤 가능한 상자를 한 화면씩 내리고 마지막 항목을 보이게 한다(IntersectionObserver 식 로더도 깨어나게) */
   var scrollers = function () { return Array.prototype.filter.call(document.querySelectorAll('*'), function (el) { var s = getComputedStyle(el); return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 40; }); };
-  var nudge = function () { scrollers().forEach(function (el) { el.scrollTop = el.scrollHeight; }); window.scrollTo(0, document.documentElement.scrollHeight); };
-  say('목록을 아래로 내려 구성원 요청을 잡는 중… 안 잡히면 목록을 직접 조금 내려 주세요.');
-  for (var i = 0; i < 120 && !seen.length; i++) { if (i % 3 === 0) nudge(); await sleep(500); }
-  if (!seen.length) { say('구성원 목록 요청(search-users)을 못 봤습니다. 구성원 화면을 새로고침한 뒤 다시 눌러 주세요.', 1); done(); return; }
-  var T = seen[0];
-  /* 3) 잡은 요청으로 첫 페이지부터 끝까지 다시 읽는다 */
-  var users = new Map(), total = 0;
-  var add = function (j) { var L = (j && (j.list || (j.data && j.data.list))) || []; L.forEach(function (u) { var e = u && u.basicInfo && u.basicInfo.email; if (e) users.set(String(e).trim().toLowerCase(), u); }); if (j && j.total) total = j.total; return j; };
-  var withCont = function (cont) {   /* 잡은 요청에서 continuation 자리만 바꾼다 — JSON 본문이면 본문에, 아니면 주소의 query 에 */
-    var url = T.url, body = T.body, inBody = false;
-    if (body) {
-      try { var o = JSON.parse(body); if (o && typeof o === 'object' && !Array.isArray(o)) { if (cont) o.continuation = cont; else if ('continuation' in o) o.continuation = null; body = JSON.stringify(o); inBody = true; } }
-      catch (e) { if (/"continuation"/.test(body)) { body = body.replace(/"continuation"\s*:\s*(null|"[^"]*")/, '"continuation":' + (cont ? JSON.stringify(cont) : 'null')); inBody = true; } }
-    }
-    try { var u = new URL(url, location.href); if (!inBody || u.searchParams.has('continuation')) { if (cont) u.searchParams.set('continuation', cont); else u.searchParams.delete('continuation'); url = u.toString(); } } catch (e) {}
-    return { url: url, body: body };
+  var nudge = function () {
+    scrollers().forEach(function (el) { el.scrollTop = Math.min(el.scrollTop + el.clientHeight * 0.9, el.scrollHeight); var last = el.lastElementChild; try { if (last && el.scrollTop + el.clientHeight >= el.scrollHeight - 5) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new Event('scroll', { bubbles: true })); });
+    window.scrollBy(0, window.innerHeight * 0.9);
   };
-  var ok = true;
-  try {
-    var cont = null, prevSize = -1, stuck = 0;
-    for (var page = 0; page < 100; page++) {
-      var q = withCont(cont);
-      var res = await F(q.url, { method: T.method, headers: T.headers, body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      var j = add(await res.json());
-      say('읽는 중… ' + users.size + (total ? ' / ' + total : '') + '명');
-      if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
-      if (users.size === prevSize) { if (++stuck >= 2) throw new Error('같은 페이지가 되풀이됨'); } else stuck = 0;   /* continuation 이 안 먹으면 폴백으로 */
-      prevSize = users.size; cont = j.continuation;
-    }
-  } catch (e) { ok = false; say('다시 읽기 실패(' + esc(e.message) + ') — 화면을 끝까지 내리면서 모읍니다.', 1); }
-  if (!ok || !users.size) {
-    responses.splice(0).forEach(add);
+  say('목록을 아래로 내려 구성원 요청을 잡는 중… 안 잡히면 목록을 직접 조금 내려 주세요.');
+  for (var i = 0; i < 120 && !caps.length; i++) { nudge(); await sleep(400); }
+  if (!caps.length) { say('구성원 목록 요청(search-users)을 못 봤습니다. 구성원 화면을 새로고침한 뒤(스크롤 내리기 전에) 다시 눌러 주세요.', 1); log('요청 못 잡음'); done(); return; }
+  var T = caps[0].req, R = caps[0].res;
+  var pathOf = function (u) { try { return new URL(u, location.href).pathname; } catch (e) { return u; } };
+  var bodyObj = null; try { bodyObj = T.body ? JSON.parse(T.body) : null; } catch (e) {}
+  log('요청 잡음: ' + T.method + ' ' + pathOf(T.url) + ' · 본문 ' + (bodyObj ? 'JSON(' + Object.keys(bodyObj).join(',') + ')' : (T.body ? '문자열' : '없음')) + ' · 헤더 ' + Object.keys(T.headers).join(','));
+  log('응답: list ' + ((R && R.list) || []).length + ' · hasNext ' + (R && R.hasNext) + ' · continuation ' + (R && R.continuation ? '있음' : '없음') + ' · total ' + tval(R && R.total));
+  var users = new Map(), total = 0;
+  var emailsOf = function (j) { return ((j && (j.list || (j.data && j.data.list))) || []).map(function (u) { return u && u.basicInfo && u.basicInfo.email ? String(u.basicInfo.email).trim().toLowerCase() : ''; }).filter(Boolean); };
+  var add = function (j) { var L = (j && (j.list || (j.data && j.data.list))) || []; L.forEach(function (u) { var e = u && u.basicInfo && u.basicInfo.email; if (e) users.set(String(e).trim().toLowerCase(), u); }); if (j && tval(j.total)) total = tval(j.total); return j; };
+  /* ③ continuation 자리 찾기 — 후보: 본문 JSON 안의 토큰처럼 생긴 값(어느 깊이든) · query 의 토큰값 · 헤더의 토큰값 · 기본(본문 continuation · query continuation) */
+  var tokish = function (v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{20,}$/.test(v); };
+  var cands = [];
+  var walk = function (o, path) { if (!o || typeof o !== 'object') return; Object.keys(o).forEach(function (k) { var v = o[k], p = path.concat(k); if (tokish(v)) cands.push({ kind: 'body', path: p }); else if (v && typeof v === 'object') walk(v, p); }); };
+  if (bodyObj) walk(bodyObj, []);
+  try { new URL(T.url, location.href).searchParams.forEach(function (v, k) { if (tokish(v)) cands.push({ kind: 'query', key: k }); }); } catch (e) {}
+  Object.keys(T.headers).forEach(function (k) { if (!/^(authorization|cookie|x-csrf|content|accept|user-agent)/i.test(k) && tokish(T.headers[k])) cands.push({ kind: 'header', key: k }); });
+  if (bodyObj && !cands.some(function (c) { return c.kind === 'body' && c.path.length === 1 && c.path[0] === 'continuation'; })) cands.push({ kind: 'body', path: ['continuation'] });
+  cands.push({ kind: 'query', key: 'continuation' });
+  var setPath = function (o, path, v) { var cur = o; for (var i = 0; i < path.length - 1; i++) { if (cur[path[i]] == null || typeof cur[path[i]] !== 'object') cur[path[i]] = {}; cur = cur[path[i]]; } cur[path[path.length - 1]] = v; };
+  var place = function (c, val) {
+    var url = T.url, headers = Object.assign({}, T.headers), body = T.body;
+    if (c.kind === 'body') { var o = bodyObj ? JSON.parse(JSON.stringify(bodyObj)) : {}; setPath(o, c.path, val == null ? null : val); body = JSON.stringify(o); }
+    else if (c.kind === 'query') { var u = new URL(url, location.href); if (val == null) u.searchParams.delete(c.key); else u.searchParams.set(c.key, val); url = u.toString(); }
+    else { if (val == null) delete headers[c.key]; else headers[c.key] = val; }
+    return { url: url, headers: headers, body: body };
+  };
+  var send = async function (q) {
+    var res = await F(q.url, { method: T.method, headers: q.headers, body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  };
+  var cname = function (c) { return c.kind === 'body' ? '본문 ' + c.path.join('.') : c.kind === 'query' ? 'query ' + c.key : '헤더 ' + c.key; };
+  var slot = null, known = emailsOf(R);
+  for (var ci = 0; ci < cands.length && !slot; ci++) {
+    var c = cands[ci];
+    try {
+      var probe;
+      if (R && R.hasNext && R.continuation) { probe = await send(place(c, R.continuation)); if (emailsOf(probe).some(function (e) { return known.indexOf(e) < 0; })) { slot = c; add(probe); } else log('후보 ' + cname(c) + ': 새 사람 없음'); }
+      else { probe = await send(place(c, null)); var em = emailsOf(probe); if (em.length && em.some(function (e) { return known.indexOf(e) < 0; })) slot = c; else log('후보 ' + cname(c) + ': 첫 페이지 아님'); }
+    } catch (e) { log('후보 ' + cname(c) + ': ' + e.message); }
+  }
+  log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 찾음 → 화면을 내리며 모으기');
+  var ok = false;
+  if (slot) {
+    try {
+      var cont = null, pages = 0, prevSize = -1;
+      for (var pg = 0; pg < 100; pg++) {
+        var j = add(await send(place(slot, cont))); pages++;
+        say('읽는 중… ' + users.size + (total ? ' / ' + total : '') + '명 (' + pages + '페이지)');
+        if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
+        if (users.size === prevSize && pg > 0) throw new Error('같은 페이지가 되풀이됨');
+        prevSize = users.size; cont = j.continuation;
+      }
+      ok = users.size > 0; log('다시 읽기 ' + pages + '페이지 · ' + users.size + '명');
+    } catch (e) { log('다시 읽기 실패: ' + e.message); say('다시 읽기 실패(' + esc(e.message) + ') — 화면을 끝까지 내리며 모읍니다.', 1); }
+  }
+  if (!ok) {
+    liveRes.splice(0).forEach(add);
     var last = -1, still = 0;
-    for (var k = 0; k < 240 && still < 8; k++) { nudge(); await sleep(500); responses.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } say('모으는 중… ' + users.size + (total ? ' / ' + total : '') + '명'); }
+    for (var k = 0; k < 300 && still < 10; k++) { nudge(); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } say('모으는 중… ' + users.size + (total ? ' / ' + total : '') + '명'); }
+    log('화면 내리며 모음: ' + users.size + '명');
   }
   if (!users.size) { say('구성원을 하나도 못 읽었습니다. 구성원 화면을 새로고침한 뒤 다시 눌러 주세요.', 1); done(); return; }
-  /* 4) HFS 창으로 보낸다 — HFS 가 받았다고 답할 때까지 1초마다(로그인 중이면 기다린다) */
+  /* ④ HFS 창으로 */
   var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false, waiting = false;
+  var short = total && users.size < total ? '<br>⚠ Flex 전체 ' + total + '명 중 ' + users.size + '명 — 구성원 화면을 새로고침한 뒤(스크롤 내리기 전에) 다시 눌러 보세요.' : '';
   window.addEventListener('message', function (ev) {
     if (ev.origin !== ORG || !ev.data) return;
-    if (ev.data.type === 'hfs-flex-ack') { acked = true; say(users.size + '명을 HFS 로 보냈습니다 ✓ — HFS 창에서 이어서 하세요.' + (total && users.size < total ? '<br>⚠ Flex 전체 ' + total + '명 중 ' + users.size + '명만 받았습니다 — 구성원 화면을 새로고침한 뒤 다시 눌러 보세요.' : '')); done(); }
-    else if (ev.data.type === 'hfs-flex-wait') { waiting = true; }
+    if (ev.data.type === 'hfs-flex-ack') { acked = true; say(users.size + '명을 HFS 로 보냈습니다 ✓ — HFS 창에서 이어서 하세요.' + short); log('HFS 받음'); done(); }
+    else if (ev.data.type === 'hfs-flex-wait') waiting = true;
   });
-  say(users.size + '명 읽음 — HFS 창으로 보내는 중…');
+  say(users.size + (total ? ' / ' + total : '') + '명 읽음 — HFS 창으로 보내는 중…');
   for (var n = 0; n < 600 && !acked; n++) {
     if (!hfsWin || hfsWin.closed) { say('HFS 창이 닫혔습니다. 다시 눌러 주세요.', 1); done(); return; }
     try { hfsWin.postMessage(payload, ORG); } catch (e) {}
@@ -708,7 +750,8 @@ function flexInboxFlush() {
   if (!_flexInbox) return 0;
   const d = _flexInbox; _flexInbox = null; let n = 0;
   d.users.forEach(u => { const e = u && u.basicInfo && u.basicInfo.email; if (!e) return; USERS.set(String(e).trim().toLowerCase(), u); n++; });
-  afterIngest('Flex 자동 수집 ' + n + '명' + (d.total ? ' / Flex 전체 ' + d.total + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+  const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (d.total || 0);
+  afterIngest('Flex 자동 수집 ' + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
   try { window.focus(); } catch (e) {}
   return n;
 }
