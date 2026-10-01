@@ -15,8 +15,8 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--navy:#0f2744;--navy2:#101B34;--blue:#0078d4;--blue-d:#106ebe;--ink:#1f2937;--ink2:#374151;--mute:#6b7280;--line:#e5e7eb;--line2:#d1d5db;--bg:#f3f4f6;--card:#fff;--ok:#107c10;--warn:#8a6116;--warn-bg:#fff8e1;--warn-line:#f1dfa0;--bad:#a4262c;--bad-bg:#fdf0f1}
 html{-webkit-text-size-adjust:100%}
-body{font-family:'Segoe UI',-apple-system,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--ink);font-size:13px;line-height:1.5}
-button,input,select,textarea{font-family:inherit}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);font-size:13px;line-height:1.5}
+button,input,select,textarea,code,pre,kbd{font-family:inherit}
 a{color:var(--blue)}
 .hidden{display:none!important}
 /* 머리띠 — APS 와 같은 남색 */
@@ -65,7 +65,7 @@ a{color:var(--blue)}
 .drop .small{font-size:.72rem}
 .manual-help{font-size:.74rem;color:var(--mute);line-height:1.7;margin-bottom:10px}
 .manual-help code,.rule code,.d code{background:#f3f4f6;border-radius:3px;padding:0 4px;font-size:.72rem}
-textarea{width:100%;min-height:88px;border:1px solid var(--line2);border-radius:6px;padding:8px 10px;font-family:Consolas,'Segoe UI',monospace;font-size:.72rem;resize:vertical;margin-top:10px;color:var(--ink)}
+textarea{width:100%;min-height:88px;border:1px solid var(--line2);border-radius:6px;padding:8px 10px;font-family:inherit;font-size:.72rem;resize:vertical;margin-top:10px;color:var(--ink)}
 textarea:focus,select:focus{outline:2px solid #bfdbfe;outline-offset:0;border-color:#3b82f6}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
 .status{display:inline-flex;align-items:center;gap:7px;margin-top:12px;font-size:.78rem;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:#fafbfc;color:var(--ink2)}
@@ -334,7 +334,7 @@ tr.warnrow td{background:var(--warn-bg)}
     <div class="fm-bar indet" id="fm-bar"><i></i></div>
     <div class="fs" id="fs-3"><span class="ic">3</span><div class="tx">HFS 에 반영<div class="sub" id="fs-3s"></div></div></div>
   </div>
-  <pre id="fm-log" class="hidden" style="margin:4px 22px 0;max-height:180px;overflow:auto;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font:11px/1.5 Consolas,monospace;color:#374151;white-space:pre-wrap"></pre>
+  <pre id="fm-log" class="hidden" style="margin:4px 22px 0;max-height:180px;overflow:auto;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font:11px/1.5 'Segoe UI',sans-serif;color:#374151;white-space:pre-wrap"></pre>
   <div class="fm-f"><span id="fm-note">창을 닫지 마세요</span><span class="sp"></span><button class="btn sm p hidden" id="fm-goflex" onclick="goFlex()">Flex 탭으로</button><button class="btn sm hidden" id="fm-diag" onclick="fmCopyDiag(this)">자세히 복사</button><button class="btn sm" onclick="fmHide()">닫기</button></div>
 </div></div>
 
