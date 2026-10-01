@@ -510,6 +510,7 @@ async function loadSystemConfig() {
     const key = (row[0] || '').toString().trim();
     if (!key) return;
     cfg[key] = { name: (row[1] || '').toString().trim(), email: (row[2] || '').toString().trim() };
+    logSkipCollect(row);   // Role(D열) IT Manager · IT system service → 이력 제외(10-01)
   });
   _sysConfig = cfg;
   return cfg;
@@ -535,9 +536,29 @@ async function _ensureLogFolder(driveId, folderPath, t) {
   } catch (e) { console.warn('[Log] 폴더 생성 오류:', e.message); return false; }
 }
 // 다른 시스템의 logAction 과 같은 파일 · JSON 모양(timestampKST · user · system · action · detail) — fire-and-forget, 실패해도 화면은 그대로
+/* ══ 이력 제외 계정(10-01) ══
+   system_config_final.xlsx 의 Role(D열)이 「IT Manager」 · 「IT system service」 인 이메일(IT 담당자 · 서비스 계정)은 시스템 운영 · 점검으로
+   이력이 너무 쌓여 Logging_data 에 남기지 않는다. 명단은 loadSystemConfig 가 설정을 읽을 때 모은다(logSkipCollect).
+   설정을 아직 읽는 중이면 잠깐 기다렸다가 판단하고, 끝내 못 읽으면 전처럼 남긴다(열린 쪽이 기본 — 이력을 잃지 않게). */
+const LOG_SKIP_ROLES = ['it manager', 'it system service'];
+const _logSkipEmails = new Set();
+function logSkipCollect(row) {
+  const role = String(row[3] || '').trim().toLowerCase(), em = String(row[2] || '').trim().toLowerCase();
+  if (em && LOG_SKIP_ROLES.includes(role)) _logSkipEmails.add(em);
+}
+function logSkipNow() {
+  const me = [user && user.email, user && user.username].map(x => String(x || '').trim().toLowerCase()).filter(Boolean);
+  return me.some(e => _logSkipEmails.has(e));
+}
+async function logSkipped() {
+  for (let i = 0; i < 50 && !_sysConfig; i++) await new Promise(r => setTimeout(r, 100));   // 부팅 중 설정 읽기를 최대 5초 기다린다
+  if (!_sysConfig) { try { await loadSystemConfig(); } catch (e) {} }                          // 아직이면 직접 읽는다(이미 읽었으면 캐시)
+  return logSkipNow();
+}
 function logAction(action, detail) {
   (async () => {
     try {
+      if (await logSkipped()) return;   // IT 운영 계정(IT Manager · IT system service)은 남기지 않는다(10-01)
       const d = await _getLogDriveId(); if (!d) return;
       const t = await token(); if (!t) return;
       const now = new Date(Date.now() + 9 * 3600 * 1000);   // KST
