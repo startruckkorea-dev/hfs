@@ -225,8 +225,8 @@ tr.warnrow td{background:var(--warn-bg)}
         </div>
         <div class="step">
           <div class="h"><span class="no">3</span>북마크 누르기</div>
-          <div class="d">목록을 끝까지 자동으로 읽어 이 창으로 보냅니다. 이 창이 로그인 화면이면 로그인만 하면 이어서 들어옵니다. Flex 화면 오른쪽 아래에 진행 상자가 뜹니다.</div>
-          <div class="act tip">보통 10초 안에 끝납니다 · 안 되면 진행 상자의 「진단 내용 복사」를 IT 에 보내 주세요</div>
+          <div class="d">HFS 창이 열리고 진행 상황이 거기에 뜹니다. 목록을 끝까지 자동으로 읽어 이 창으로 보내며, 로그인 화면이면 로그인만 하면 이어서 들어옵니다.</div>
+          <div class="act tip">한 번 성공하면 다음부터는 연결 정보를 기억해 바로 읽습니다 · 안 되면 팝업의 「자세히 복사」를 IT 에 보내 주세요</div>
         </div>
       </div>
       <div id="icon-box" class="hidden" style="margin-top:12px">
@@ -297,157 +297,189 @@ tr.warnrow td{background:var(--warn-bg)}
 <div id="flex-modal" role="dialog" aria-modal="true" aria-labelledby="fm-title"><div class="fm">
   <div class="fm-h"><div class="fm-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg></div><div><div class="fm-t" id="fm-title">Flex 에서 구성원을 받는 중</div><div class="fm-s" id="fm-s">flex.team 탭의 북마크가 목록을 읽어 보내고 있습니다</div></div></div>
   <div class="fm-steps">
-    <div class="fs" id="fs-1"><span class="ic">1</span><div class="tx">구성원 목록 요청 잡기<div class="sub" id="fs-1s"></div></div></div>
+    <div class="fs" id="fs-1"><span class="ic">1</span><div class="tx">Flex 에 연결<div class="sub" id="fs-1s"></div></div></div>
     <div class="fs" id="fs-2"><span class="ic">2</span><div class="tx">끝까지 읽기<div class="sub" id="fs-2s"></div></div></div>
     <div class="fm-bar indet" id="fm-bar"><i></i></div>
     <div class="fs" id="fs-3"><span class="ic">3</span><div class="tx">이 창으로 보내기<div class="sub" id="fs-3s"></div></div></div>
   </div>
-  <div class="fm-f"><span id="fm-note">창을 닫지 마세요 · Flex 데이터는 브라우저 안에서만 오갑니다</span><span class="sp"></span><button class="btn sm" onclick="fmHide()">닫기</button></div>
+  <div class="fm-f"><span id="fm-note">창을 닫지 마세요 · Flex 데이터는 브라우저 안에서만 오갑니다</span><span class="sp"></span><button class="btn sm hidden" id="fm-diag" onclick="fmCopyDiag(this)">자세히 복사</button><button class="btn sm" onclick="fmHide()">닫기</button></div>
 </div></div>
 
 <script type="text/plain" id="hfs-collector">
 (async () => {
-  /* HFS 수집 v2 — flex.team 구성원 화면에서 실행(북마클릿 · 콘솔).
-     ① 구성원 목록 요청(search-users)과 그 응답을 한 번 잡는다(목록을 아래로 내려 일으킴).
-     ② 그 요청 안에서 continuation 이 실리는 자리(본문 JSON 의 어느 키 · 주소 query · 헤더)를 응답의 continuation 으로 실제로 보내 보며 찾는다.
-     ③ 자리를 찾으면 continuation 없이(첫 페이지) 보내고 응답의 continuation 을 따라 끝까지 읽는다. 못 찾으면 화면을 내리며 응답을 모은다.
-     ④ HFS 창으로 postMessage(브라우저 안에서만) — HFS 가 받았다고 답할 때까지 1초마다. 오른쪽 아래 상자에 진행 · 진단을 띄운다. */
-  var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin;
+  /* HFS 수집 v4 — flex.team 구성원 화면에서 실행(북마클릿 · 콘솔). 진행 · 결과 · 오류는 모두 HFS 창(수신 팝업)에 보인다.
+     ① 지난번에 저장해 둔 요청 틀(localStorage, flex.team 안)이 있으면 바로 그 틀로 첫 페이지부터 끝까지 읽는다 — 스크롤 · 잡기 없이.
+        틀의 인증 헤더는 저장소(localStorage · sessionStorage)의 어느 값에서 왔는지 기억해 두고 실행 때마다 새 값으로 다시 만든다.
+     ② 틀이 없거나 안 먹으면: fetch · XHR 을 가로채고 목록을 조용히 아래로 내려 구성원 요청(search-users)과 응답을 한 번 잡는다.
+        안 잡히면 검색 칸에 글자를 넣었다 지워 요청을 일으켜 본다.
+     ③ 잡은 요청 안에서 continuation 자리를(본문 JSON 어느 키 · query · 헤더) 응답의 continuation 으로 실제로 보내 보며 찾고 틀로 저장한다.
+     ④ 첫 페이지부터 끝까지 읽어 HFS 창으로 postMessage(브라우저 안에서만). HFS 가 받았다고 답할 때까지 1초마다 보낸다. */
+  var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin, TPL_KEY = 'hfs.collect.tpl.v1';
   if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
   if (window.__hfsRun) { try { window.__hfsRun.focus(); } catch (e) {} return; }
-  var hfsWin = window.open(HFS + '#collect', 'hfs');
-  window.__hfsRun = hfsWin || true;
-  var prog = function (stage, extra) { try { if (hfsWin && !hfsWin.closed) hfsWin.postMessage(Object.assign({ type: 'hfs-flex-progress', stage: stage }, extra || {}), ORG); } catch (e) {} };
-  var esc = function (s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
-  var diag = [];
+  var hfsWin = window.open(HFS, 'hfs');
+  if (!hfsWin) { alert('HFS 창이 열리지 않았습니다 — 브라우저의 팝업 차단을 이 사이트에서 풀고 다시 눌러 주세요.'); return; }
+  try { hfsWin.focus(); } catch (e) {}
+  window.__hfsRun = hfsWin;
+  var diag = [], lastProg = null, finished = false;
   var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
-  var box = document.getElementById('__hfs_box');
-  if (!box) { box = document.createElement('div'); box.id = '__hfs_box'; box.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483647;background:#fff;color:#1f2937;font:13px/1.5 "Segoe UI","Malgun Gothic",sans-serif;padding:14px 16px 12px;border-radius:12px;box-shadow:0 12px 40px rgba(15,39,68,.28);border:1px solid #e5e7eb;width:360px;max-width:92vw'; document.body.appendChild(box); }
-  var pct = 0;
-  var say = function (t, bad) {
-    box.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="width:28px;height:28px;border-radius:8px;background:#e8f1fb;color:#0078d4;display:inline-flex;align-items:center;justify-content:center;flex:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg></span><b style="font-size:13px;color:#0f2744">HFS 수집</b></div>' +
-      '<div style="font-size:12.5px;line-height:1.55;color:' + (bad ? '#a4262c' : '#374151') + '">' + t + '</div>' +
-      '<div style="height:5px;background:#eef0f3;border-radius:5px;overflow:hidden;margin:9px 0 8px"><i style="display:block;height:100%;width:' + (pct || 0) + '%;background:linear-gradient(90deg,#3b82f6,#0078d4);transition:width .3s"></i></div>' +
-      '<div style="font-size:11px;color:#9ca3af;display:flex;gap:10px"><a href="#" id="__hfs_diag" style="color:#6b7280">진단 내용 복사</a><a href="#" id="__hfs_close" style="color:#6b7280;margin-left:auto">닫기</a></div>';
-    box.querySelector('#__hfs_diag').onclick = function (e) { e.preventDefault(); var txt = diag.join('\n'); try { navigator.clipboard.writeText(txt).then(function () { e.target.textContent = '복사했습니다 ✓'; }, function () { prompt('복사해 주세요', txt); }); } catch (x) { prompt('복사해 주세요', txt); } };
-    box.querySelector('#__hfs_close').onclick = function (e) { e.preventDefault(); box.remove(); };
-  };
-  var done = function () { window.__hfsRun = null; };
+  var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
+  var beat = setInterval(function () { if (finished || !lastProg) return; if (hfsWin.closed) { clearInterval(beat); window.__hfsRun = null; return; } try { hfsWin.postMessage(lastProg, ORG); } catch (e) {} }, 1000);
+  var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; };
+  var fail = function (text) { log('실패: ' + text); prog('error', { text: text, diag: diag.join('\n') }); done(); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-  var tval = function (t) { return t && typeof t === 'object' ? (t.value || t.count || t.total || 0) : (t || 0); };   /* total 이 {value:72,…} 꼴일 수 있다 */
-  say('준비 중…'); log('시작 ' + location.href); prog('capture');
-  /* ① 요청 · 응답 가로채기 — fetch · XMLHttpRequest */
-  var caps = [], liveRes = [];
-  var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
-  var F = window.fetch;
-  window.fetch = async function (input, init) {
-    var url = typeof input === 'string' ? input : (input && input.url) || '', pre = null;
-    if (/search-users/i.test(url)) {
-      try {
-        var body = init && init.body;
-        if (body == null && input && typeof input.clone === 'function') { try { body = await input.clone().text(); } catch (e) {} }
-        pre = { url: url, method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(), headers: hdrs((init && init.headers) || (input && input.headers)), body: typeof body === 'string' ? body : null };
-      } catch (e) {}
-    }
-    var res = await F.apply(this, arguments);
-    if (pre) { try { res.clone().json().then(function (j) { caps.push({ req: pre, res: j }); liveRes.push(j); }).catch(function () {}); } catch (e) {} }
-    return res;
-  };
-  var XO = XMLHttpRequest.prototype.open, XS = XMLHttpRequest.prototype.send, XH = XMLHttpRequest.prototype.setRequestHeader;
-  XMLHttpRequest.prototype.open = function (m, u) { this.__hfs = { method: String(m).toUpperCase(), url: String(u), headers: {} }; return XO.apply(this, arguments); };
-  XMLHttpRequest.prototype.setRequestHeader = function (k, v) { if (this.__hfs) this.__hfs.headers[k] = v; return XH.apply(this, arguments); };
-  XMLHttpRequest.prototype.send = function (b) {
-    var r = this.__hfs, x = this;
-    if (r && /search-users/i.test(r.url)) { r.body = typeof b === 'string' ? b : null; x.addEventListener('load', function () { try { var j = JSON.parse(x.responseText); caps.push({ req: r, res: j }); liveRes.push(j); } catch (e) {} }); }
-    return XS.apply(this, arguments);
-  };
-  /* ② 목록을 아래로 — 스크롤 가능한 상자를 한 화면씩 내리고 마지막 항목을 보이게 한다(IntersectionObserver 식 로더도 깨어나게) */
-  var scrollers = function () { return Array.prototype.filter.call(document.querySelectorAll('*'), function (el) { var s = getComputedStyle(el); return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 40; }); };
-  var nudge = function () {
-    scrollers().forEach(function (el) { el.scrollTop = Math.min(el.scrollTop + el.clientHeight * 0.9, el.scrollHeight); var last = el.lastElementChild; try { if (last && el.scrollTop + el.clientHeight >= el.scrollHeight - 5) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new Event('scroll', { bubbles: true })); });
-    window.scrollBy(0, window.innerHeight * 0.9);
-  };
-  pct = 5; say('목록을 아래로 내려 구성원 요청을 잡는 중… 안 잡히면 목록을 직접 조금 내려 주세요.');
-  for (var i = 0; i < 120 && !caps.length; i++) { nudge(); await sleep(400); }
-  if (!caps.length) { say('구성원 목록 요청(search-users)을 못 봤습니다. 구성원 화면을 새로고침한 뒤(스크롤 내리기 전에) 다시 눌러 주세요.', 1); log('요청 못 잡음'); prog('error', { text: '구성원 목록 요청을 못 잡았습니다 — Flex 화면을 새로고침한 뒤 북마크를 다시 눌러 주세요.' }); done(); return; }
-  var T = caps[0].req, R = caps[0].res; pct = 15; prog('read', { count: 0, total: tval(R && R.total) });
+  var tval = function (t) { return t && typeof t === 'object' ? (t.value || t.count || t.total || 0) : (t || 0); };
   var pathOf = function (u) { try { return new URL(u, location.href).pathname; } catch (e) { return u; } };
-  var bodyObj = null; try { bodyObj = T.body ? JSON.parse(T.body) : null; } catch (e) {}
-  log('요청 잡음: ' + T.method + ' ' + pathOf(T.url) + ' · 본문 ' + (bodyObj ? 'JSON(' + Object.keys(bodyObj).join(',') + ')' : (T.body ? '문자열' : '없음')) + ' · 헤더 ' + Object.keys(T.headers).join(','));
-  log('응답: list ' + ((R && R.list) || []).length + ' · hasNext ' + (R && R.hasNext) + ' · continuation ' + (R && R.continuation ? '있음' : '없음') + ' · total ' + tval(R && R.total));
+  var F = window.fetch;
+  log('시작 ' + location.href); prog('capture');
   var users = new Map(), total = 0;
   var emailsOf = function (j) { return ((j && (j.list || (j.data && j.data.list))) || []).map(function (u) { return u && u.basicInfo && u.basicInfo.email ? String(u.basicInfo.email).trim().toLowerCase() : ''; }).filter(Boolean); };
   var add = function (j) { var L = (j && (j.list || (j.data && j.data.list))) || []; L.forEach(function (u) { var e = u && u.basicInfo && u.basicInfo.email; if (e) users.set(String(e).trim().toLowerCase(), u); }); if (j && tval(j.total)) total = tval(j.total); return j; };
-  /* ③ continuation 자리 찾기 — 후보: 본문 JSON 안의 토큰처럼 생긴 값(어느 깊이든) · query 의 토큰값 · 헤더의 토큰값 · 기본(본문 continuation · query continuation) */
-  var tokish = function (v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{20,}$/.test(v); };
-  var cands = [];
-  var walk = function (o, path) { if (!o || typeof o !== 'object') return; Object.keys(o).forEach(function (k) { var v = o[k], p = path.concat(k); if (tokish(v)) cands.push({ kind: 'body', path: p }); else if (v && typeof v === 'object') walk(v, p); }); };
-  if (bodyObj) walk(bodyObj, []);
-  try { new URL(T.url, location.href).searchParams.forEach(function (v, k) { if (tokish(v)) cands.push({ kind: 'query', key: k }); }); } catch (e) {}
-  Object.keys(T.headers).forEach(function (k) { if (!/^(authorization|cookie|x-csrf|content|accept|user-agent)/i.test(k) && tokish(T.headers[k])) cands.push({ kind: 'header', key: k }); });
-  if (bodyObj && !cands.some(function (c) { return c.kind === 'body' && c.path.length === 1 && c.path[0] === 'continuation'; })) cands.push({ kind: 'body', path: ['continuation'] });
-  cands.push({ kind: 'query', key: 'continuation' });
+  /* ── 요청 틀: 헤더 값이 저장소의 어느 값에서 왔는지 기억 · 다시 만들기 ── */
+  var storeVals = function () {
+    var out = [];
+    [['localStorage', localStorage], ['sessionStorage', sessionStorage]].forEach(function (p) {
+      var st = p[1]; try {
+        for (var i = 0; i < st.length; i++) { var k = st.key(i), v = st.getItem(k); if (!v) continue;
+          if (v.length >= 20) out.push({ store: p[0], key: k, path: null, val: v });
+          try { var o = JSON.parse(v); (function walk(x, path) { if (!x || typeof x !== 'object') return; Object.keys(x).forEach(function (kk) { var vv = x[kk]; if (typeof vv === 'string' && vv.length >= 20) out.push({ store: p[0], key: k, path: path.concat(kk), val: vv }); else if (vv && typeof vv === 'object') walk(vv, path.concat(kk)); }); })(o, []); } catch (e) {}
+        }
+      } catch (e) {}
+    });
+    return out;
+  };
+  var bindHeaders = function (headers) {
+    var vals = storeVals(), out = {};
+    Object.keys(headers).forEach(function (h) {
+      var v = String(headers[h]), src = null;
+      if (v.length >= 20) { for (var i = 0; i < vals.length; i++) { var c = vals[i]; var at = v.indexOf(c.val); if (at >= 0 && c.val.length >= 20) { src = { store: c.store, key: c.key, path: c.path, prefix: v.slice(0, at), suffix: v.slice(at + c.val.length) }; break; } } }
+      out[h] = { value: v, src: src };
+    });
+    return out;
+  };
+  var rebuildHeaders = function (bound) {
+    var out = {};
+    for (var h in bound) {
+      var b = bound[h];
+      if (b.src) {
+        var st = b.src.store === 'localStorage' ? localStorage : sessionStorage, raw = st.getItem(b.src.key); if (!raw) return null;
+        var cur = raw; if (b.src.path) { try { cur = b.src.path.reduce(function (o, k) { return o == null ? null : o[k]; }, JSON.parse(raw)); } catch (e) { return null; } if (typeof cur !== 'string' || !cur) return null; }
+        out[h] = b.src.prefix + cur + b.src.suffix;
+      } else out[h] = b.value;
+    }
+    return out;
+  };
+  var loadTpl = function () { try { var t = JSON.parse(localStorage.getItem(TPL_KEY) || 'null'); if (!t || !t.url || !t.slot) return null; var h = rebuildHeaders(t.headers || {}); if (!h) return null; return { url: t.url, method: t.method, headers: h, body: t.body, slot: t.slot }; } catch (e) { return null; } };
+  var saveTpl = function (T, slot) { try { localStorage.setItem(TPL_KEY, JSON.stringify({ url: T.url, method: T.method, headers: bindHeaders(T.headers), body: T.body, slot: slot, at: Date.now() })); } catch (e) {} };
+  var dropTpl = function () { try { localStorage.removeItem(TPL_KEY); } catch (e) {} };
+  /* ── 틀로 보내기 ── */
   var setPath = function (o, path, v) { var cur = o; for (var i = 0; i < path.length - 1; i++) { if (cur[path[i]] == null || typeof cur[path[i]] !== 'object') cur[path[i]] = {}; cur = cur[path[i]]; } cur[path[path.length - 1]] = v; };
-  var place = function (c, val) {
+  var place = function (T, c, val) {
     var url = T.url, headers = Object.assign({}, T.headers), body = T.body;
-    if (c.kind === 'body') { var o = bodyObj ? JSON.parse(JSON.stringify(bodyObj)) : {}; setPath(o, c.path, val == null ? null : val); body = JSON.stringify(o); }
+    if (c.kind === 'body') { var o = {}; try { o = T.body ? JSON.parse(T.body) : {}; } catch (e) { o = {}; } setPath(o, c.path, val == null ? null : val); body = JSON.stringify(o); }
     else if (c.kind === 'query') { var u = new URL(url, location.href); if (val == null) u.searchParams.delete(c.key); else u.searchParams.set(c.key, val); url = u.toString(); }
     else { if (val == null) delete headers[c.key]; else headers[c.key] = val; }
     return { url: url, headers: headers, body: body };
   };
-  var send = async function (q) {
+  var send = async function (T, q) {
     var res = await F(q.url, { method: T.method, headers: q.headers, body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return res.json();
   };
-  var cname = function (c) { return c.kind === 'body' ? '본문 ' + c.path.join('.') : c.kind === 'query' ? 'query ' + c.key : '헤더 ' + c.key; };
-  var slot = null, known = emailsOf(R);
-  for (var ci = 0; ci < cands.length && !slot; ci++) {
-    var c = cands[ci];
-    try {
-      var probe;
-      if (R && R.hasNext && R.continuation) { probe = await send(place(c, R.continuation)); if (emailsOf(probe).some(function (e) { return known.indexOf(e) < 0; })) { slot = c; add(probe); } else log('후보 ' + cname(c) + ': 새 사람 없음'); }
-      else { probe = await send(place(c, null)); var em = emailsOf(probe); if (em.length && em.some(function (e) { return known.indexOf(e) < 0; })) slot = c; else log('후보 ' + cname(c) + ': 첫 페이지 아님'); }
-    } catch (e) { log('후보 ' + cname(c) + ': ' + e.message); }
-  }
-  log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 찾음 → 화면을 내리며 모으기');
+  var readAll = async function (T) {   /* 첫 페이지부터 끝까지 */
+    var cont = null, pages = 0, prevSize = -1;
+    for (var pg = 0; pg < 100; pg++) {
+      var j = add(await send(T, place(T, T.slot, cont))); pages++;
+      prog('read', { count: users.size, total: total, pages: pages });
+      if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
+      if (users.size === prevSize && pg > 0) throw new Error('같은 페이지가 되풀이됨');
+      prevSize = users.size; cont = j.continuation;
+    }
+    log('읽기 ' + pages + '페이지 · ' + users.size + '명');
+    return users.size > 0;
+  };
   var ok = false;
-  if (slot) {
-    try {
-      var cont = null, pages = 0, prevSize = -1;
-      for (var pg = 0; pg < 100; pg++) {
-        var j = add(await send(place(slot, cont))); pages++;
-        pct = total ? 15 + Math.round(70 * Math.min(1, users.size / total)) : 50; say('읽는 중… ' + users.size + (total ? ' / ' + total : '') + '명 (' + pages + '페이지)'); prog('read', { count: users.size, total: total, pages: pages });
-        if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
-        if (users.size === prevSize && pg > 0) throw new Error('같은 페이지가 되풀이됨');
-        prevSize = users.size; cont = j.continuation;
-      }
-      ok = users.size > 0; log('다시 읽기 ' + pages + '페이지 · ' + users.size + '명');
-    } catch (e) { log('다시 읽기 실패: ' + e.message); say('다시 읽기 실패(' + esc(e.message) + ') — 화면을 끝까지 내리며 모읍니다.', 1); }
-  }
+  /* ① 저장된 틀 */
+  var T = loadTpl();
+  if (T) { log('저장된 틀 사용: ' + T.method + ' ' + pathOf(T.url)); try { ok = await readAll(T); } catch (e) { log('저장된 틀 실패: ' + e.message + ' → 다시 잡는다'); dropTpl(); users = new Map(); total = 0; } }
   if (!ok) {
-    liveRes.splice(0).forEach(add);
-    var last = -1, still = 0;
-    for (var k = 0; k < 300 && still < 10; k++) { nudge(); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } pct = total ? 15 + Math.round(70 * Math.min(1, users.size / total)) : 50; say('모으는 중… ' + users.size + (total ? ' / ' + total : '') + '명'); prog('read', { count: users.size, total: total, scroll: true }); }
-    log('화면 내리며 모음: ' + users.size + '명');
+    /* ② 요청 · 응답 가로채기 — fetch · XMLHttpRequest */
+    var caps = [], liveRes = [];
+    var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
+    window.fetch = async function (input, init) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '', pre = null;
+      if (/search-users/i.test(url)) {
+        try { var body = init && init.body; if (body == null && input && typeof input.clone === 'function') { try { body = await input.clone().text(); } catch (e) {} }
+          pre = { url: url, method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(), headers: hdrs((init && init.headers) || (input && input.headers)), body: typeof body === 'string' ? body : null }; } catch (e) {}
+      }
+      var res = await F.apply(this, arguments);
+      if (pre) { try { res.clone().json().then(function (j) { caps.push({ req: pre, res: j }); liveRes.push(j); }).catch(function () {}); } catch (e) {} }
+      return res;
+    };
+    var XO = XMLHttpRequest.prototype.open, XS = XMLHttpRequest.prototype.send, XH = XMLHttpRequest.prototype.setRequestHeader;
+    XMLHttpRequest.prototype.open = function (m, u) { this.__hfs = { method: String(m).toUpperCase(), url: String(u), headers: {} }; return XO.apply(this, arguments); };
+    XMLHttpRequest.prototype.setRequestHeader = function (k, v) { if (this.__hfs) this.__hfs.headers[k] = v; return XH.apply(this, arguments); };
+    XMLHttpRequest.prototype.send = function (b) {
+      var r = this.__hfs, x = this;
+      if (r && /search-users/i.test(r.url)) { r.body = typeof b === 'string' ? b : null; x.addEventListener('load', function () { try { var j = JSON.parse(x.responseText); caps.push({ req: r, res: j }); liveRes.push(j); } catch (e) {} }); }
+      return XS.apply(this, arguments);
+    };
+    var scrollers = function () { return Array.prototype.filter.call(document.querySelectorAll('*'), function (el) { var s = getComputedStyle(el); return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 40; }); };
+    var nudge = function () {
+      scrollers().forEach(function (el) { el.scrollTop = Math.min(el.scrollTop + el.clientHeight * 0.9, el.scrollHeight); var last = el.lastElementChild; try { if (last && el.scrollTop + el.clientHeight >= el.scrollHeight - 5) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new Event('scroll', { bubbles: true })); });
+      window.scrollBy(0, window.innerHeight * 0.9);
+    };
+    var setInput = function (el, v) { try { var d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'); d.set.call(el, v); } catch (e) { el.value = v; } el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    var retrigger = async function () {   /* 검색 칸에 글자를 넣었다 지워 목록 요청을 일으킨다 */
+      var inp = Array.prototype.find.call(document.querySelectorAll('input[type="search"],input[type="text"],input:not([type])'), function (el) { var r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && /검색|search|이름|name/i.test((el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '')); });
+      if (!inp) return false;
+      log('검색 칸으로 다시 요청'); inp.focus(); setInput(inp, 'a'); await sleep(1500); setInput(inp, ''); await sleep(2500); return true;
+    };
+    for (var i = 0; i < 25 && !caps.length; i++) { nudge(); await sleep(400); }
+    if (!caps.length) { await retrigger(); for (var i2 = 0; i2 < 15 && !caps.length; i2++) { nudge(); await sleep(400); } }
+    if (!caps.length) { fail('Flex 구성원 목록 요청을 잡지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
+    var C = caps[0].req, R = caps[0].res;
+    var bodyObj = null; try { bodyObj = C.body ? JSON.parse(C.body) : null; } catch (e) {}
+    log('요청 잡음: ' + C.method + ' ' + pathOf(C.url) + ' · 본문 ' + (bodyObj ? 'JSON(' + Object.keys(bodyObj).join(',') + ')' : (C.body ? '문자열' : '없음')) + ' · 헤더 ' + Object.keys(C.headers).join(','));
+    log('응답: list ' + ((R && R.list) || []).length + ' · hasNext ' + (R && R.hasNext) + ' · total ' + tval(R && R.total));
+    /* ③ continuation 자리 찾기 */
+    var tokish = function (v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{20,}$/.test(v); };
+    var cands = [];
+    (function walk(o, path) { if (!o || typeof o !== 'object') return; Object.keys(o).forEach(function (k) { var v = o[k], p = path.concat(k); if (tokish(v)) cands.push({ kind: 'body', path: p }); else if (v && typeof v === 'object') walk(v, p); }); })(bodyObj, []);
+    try { new URL(C.url, location.href).searchParams.forEach(function (v, k) { if (tokish(v)) cands.push({ kind: 'query', key: k }); }); } catch (e) {}
+    Object.keys(C.headers).forEach(function (k) { if (!/^(authorization|cookie|x-csrf|content|accept|user-agent)/i.test(k) && tokish(C.headers[k])) cands.push({ kind: 'header', key: k }); });
+    if (bodyObj && !cands.some(function (c) { return c.kind === 'body' && c.path.length === 1 && c.path[0] === 'continuation'; })) cands.push({ kind: 'body', path: ['continuation'] });
+    cands.push({ kind: 'query', key: 'continuation' });
+    var cname = function (c) { return c.kind === 'body' ? '본문 ' + c.path.join('.') : c.kind === 'query' ? 'query ' + c.key : '헤더 ' + c.key; };
+    var slot = null, known = emailsOf(R);
+    for (var ci = 0; ci < cands.length && !slot; ci++) {
+      var c = cands[ci];
+      try {
+        var probe;
+        if (R && R.hasNext && R.continuation) { probe = await send(C, place(C, c, R.continuation)); if (emailsOf(probe).some(function (e) { return known.indexOf(e) < 0; })) { slot = c; add(probe); } else log('후보 ' + cname(c) + ': 새 사람 없음'); }
+        else { probe = await send(C, place(C, c, null)); var em = emailsOf(probe); if (em.length && em.some(function (e) { return known.indexOf(e) < 0; })) slot = c; else log('후보 ' + cname(c) + ': 첫 페이지 아님'); }
+      } catch (e) { log('후보 ' + cname(c) + ': ' + e.message); }
+    }
+    log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 찾음 → 화면을 내리며 모으기');
+    if (slot) { C.slot = slot; saveTpl(C, slot); try { ok = await readAll(C); } catch (e) { log('읽기 실패: ' + e.message); } }
+    if (!ok) {   /* 화면을 내리며 응답 모으기(첫 페이지는 빠질 수 있다) */
+      liveRes.splice(0).forEach(add);
+      var last = -1, still = 0;
+      for (var k = 0; k < 300 && still < 10; k++) { nudge(); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } prog('read', { count: users.size, total: total, scroll: true }); }
+      log('화면 내리며 모음: ' + users.size + '명');
+    }
   }
-  if (!users.size) { say('구성원을 하나도 못 읽었습니다. 구성원 화면을 새로고침한 뒤 다시 눌러 주세요.', 1); prog('error', { text: '구성원을 하나도 못 읽었습니다 — Flex 화면을 새로고침한 뒤 다시 눌러 주세요.' }); done(); return; }
+  if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
   /* ④ HFS 창으로 */
-  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false, waiting = false;
-  var short = total && users.size < total ? '<br>⚠ Flex 전체 ' + total + '명 중 ' + users.size + '명 — 구성원 화면을 새로고침한 뒤(스크롤 내리기 전에) 다시 눌러 보세요.' : '';
-  window.addEventListener('message', function (ev) {
-    if (ev.origin !== ORG || !ev.data) return;
-    if (ev.data.type === 'hfs-flex-ack') { acked = true; pct = 100; say(users.size + '명을 HFS 로 보냈습니다 ✓ — HFS 창에서 이어서 하세요.' + short); log('HFS 받음'); done(); }
-    else if (ev.data.type === 'hfs-flex-wait') waiting = true;
-  });
-  pct = 90; say(users.size + (total ? ' / ' + total : '') + '명 읽음 — HFS 창으로 보내는 중…'); prog('send', { count: users.size, total: total });
+  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false;
+  window.addEventListener('message', function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } });
+  prog('send', { count: users.size, total: total, partial: !!(total && users.size < total) });
   for (var n = 0; n < 600 && !acked; n++) {
-    if (!hfsWin || hfsWin.closed) { say('HFS 창이 닫혔습니다. 다시 눌러 주세요.', 1); done(); return; }
+    if (hfsWin.closed) { done(); return; }
     try { hfsWin.postMessage(payload, ORG); } catch (e) {}
-    if (waiting) say(users.size + '명 읽음 — HFS 창에서 로그인하면 자동으로 들어갑니다…');
     await sleep(1000);
   }
-  if (!acked) { say('HFS 창이 응답하지 않습니다. HFS 에 로그인한 뒤 다시 눌러 주세요.', 1); done(); }
+  if (!acked) { done(); }
 })();
 </script>
 <script>
@@ -764,7 +796,7 @@ async function boot(account) {
   document.getElementById('app').classList.remove('hidden');
   _authorized = true;
   if (_flexInbox) flexInboxFlush();                                   // 로그인 전에 flex.team 북마클릿이 보낸 목록이 있으면 지금 넣는다
-  else if (location.hash === '#collect' || _fmLast) { fmShow(); fmSet(_fmLast || { stage: 'capture' }); }   // 북마클릿이 연 창 — 받는 중 팝업
+  else if (_fmLast || (window.name === 'hfs' && !sessionStorage.getItem('hfs.collected'))) { fmShow(); fmSet(_fmLast || { stage: 'capture' }); }   // 북마클릿이 연 창(이름 hfs) — 받는 중 팝업
 }
 function showDeny(html, contact) {
   document.getElementById('deny-text').innerHTML = html;
@@ -871,7 +903,7 @@ const FLEX_ORIGIN = 'https://flex.team';
 let _flexInbox = null, _authorized = false;
 window.addEventListener('message', ev => {
   if (ev.origin !== FLEX_ORIGIN || !ev.data) return;
-  if (ev.data.type === 'hfs-flex-progress') { _fmLast = ev.data; if (_authorized) fmSet(ev.data); return; }
+  if (ev.data.type === 'hfs-flex-progress') { _fmLast = ev.data; try { sessionStorage.removeItem('hfs.collected'); } catch (e) {} if (_authorized) fmSet(ev.data); return; }
   if (ev.data.type !== 'hfs-flex-users' || !Array.isArray(ev.data.users)) return;
   _flexInbox = ev.data;
   if (_authorized) { const n = flexInboxFlush(); try { ev.source.postMessage({ type: 'hfs-flex-ack', count: n }, ev.origin); } catch (e) {} }
@@ -892,13 +924,16 @@ function fmSet(d) {
   else if (d.stage === 'send' || d.stage === 'done') { bar.classList.remove('indet'); bar.firstElementChild.style.width = '100%'; }
   else if (d.stage === 'capture') { bar.classList.add('indet'); }
   document.getElementById('fs-2s').textContent = d.stage === 'read' ? (cnt + (tot ? ' / ' + tot : '') + '명' + (d.pages ? ' · ' + d.pages + '페이지' : '') + (d.scroll ? ' · 화면을 내리며 모으는 중' : '')) : (idx > 1 ? (cnt ? cnt + (tot ? ' / ' + tot : '') + '명' : '') : '');
-  document.getElementById('fs-1s').textContent = d.stage === 'capture' ? 'Flex 목록을 아래로 내려 요청을 기다리는 중' : (idx > 0 ? '잡았습니다' : '');
+  document.getElementById('fs-1s').textContent = d.stage === 'capture' ? '구성원 목록을 불러오는 중' : (idx > 0 ? '연결됨' : '');
   document.getElementById('fs-3s').textContent = d.stage === 'send' ? '받는 중…' : (d.stage === 'done' ? (d.count + '명을 받았습니다') : '');
-  const s = document.getElementById('fm-s'), note = document.getElementById('fm-note');
+  const s = document.getElementById('fm-s'), note = document.getElementById('fm-note'), dg = document.getElementById('fm-diag');
+  _fmDiag = d.diag || _fmDiag; dg.classList.toggle('hidden', d.stage !== 'error' || !_fmDiag);
   if (d.stage === 'error') { s.textContent = '중단되었습니다'; note.textContent = d.text || '오류'; note.style.color = '#a4262c'; clearTimeout(_fmTimer); }
-  else if (d.stage === 'done') { s.textContent = '완료 — 아래 표에서 이어서 확인하세요'; note.textContent = ''; setTimeout(fmHide, 1400); }
+  else if (d.stage === 'done') { s.textContent = '완료 — 아래 표에서 이어서 확인하세요'; note.textContent = (d.total && d.count < d.total) ? 'Flex 전체 ' + d.total + '명 중 ' + d.count + '명만 받았습니다 — Flex 탭을 새로고침한 뒤 다시 눌러 보세요' : ''; note.style.color = (d.total && d.count < d.total) ? '#8a6116' : ''; setTimeout(fmHide, (d.total && d.count < d.total) ? 6000 : 1400); }
   else { s.textContent = 'flex.team 탭의 북마크가 목록을 읽어 보내고 있습니다'; note.textContent = '창을 닫지 마세요 · Flex 데이터는 브라우저 안에서만 오갑니다'; note.style.color = ''; }
 }
+let _fmDiag = '';
+async function fmCopyDiag(btn) { try { await navigator.clipboard.writeText(_fmDiag); btn.textContent = '복사했습니다 ✓'; } catch (e) { prompt('아래 내용을 복사해 IT 에 보내 주세요', _fmDiag); } }
 let _fmLastIdx = null;
 function flexInboxFlush() {
   if (!_flexInbox) return 0;
@@ -907,16 +942,18 @@ function flexInboxFlush() {
   const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (d.total || 0);
   afterIngest('Flex 자동 수집 ' + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
   fmSet({ stage: 'done', count: n, total: tot });
-  try { history.replaceState(null, '', location.pathname); } catch (e) {}   // #collect 를 지워 새로고침 때 팝업이 다시 뜨지 않게
+  try { sessionStorage.setItem('hfs.collected', '1'); } catch (e) {}   // 이 탭을 새로고침해도 받는 중 팝업이 다시 뜨지 않게
   try { window.focus(); } catch (e) {}
   return n;
 }
 /* 북마클릿 단추 — href 를 javascript: 로 만들어 북마크 바로 끌어다 놓을 수 있게. 이 화면에서 누르면 실행하지 않고 안내만 */
 function bmSetup() {
-  // 주석(/* */)과 들여쓰기를 빼서 북마크 URL 을 줄인다(수집 코드엔 줄 주석 · '/*' 가 든 문자열이 없다)
+  // 북마크 = 로더 + 내장 코드. 로더가 먼저 이 사이트의 collector.js(최신)를 받아 실행하므로, 수집 코드를 고쳐도 북마크를 다시 등록할 필요가 없다.
+  // flex.team 이 바깥 fetch 나 new Function 을 막으면 내장 코드(이 페이지에 접혀 있는 것과 같음)로 돈다. 주석 · 들여쓰기는 빼서 URL 을 줄인다.
   const src = (document.getElementById('hfs-collector').textContent || '').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.trim()).filter(Boolean).join('\n');
-  document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(src);
-  document.getElementById('bm-src').value = src;
+  const loader = "(async()=>{try{const r=await fetch('" + location.origin + location.pathname.replace(/[^/]*$/, '') + "collector.js?v='+Date.now(),{cache:'no-store'});if(r.ok){new Function(await r.text())();return;}}catch(e){}\n" + src + "\n})();";
+  document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(loader);
+  document.getElementById('bm-src').value = loader;
 }
 function bmClick(ev) { ev.preventDefault(); const m = document.getElementById('bm-msg'); m.textContent = '← 북마크 바에 끌어다 놓은 뒤 flex.team 에서 누르세요'; setTimeout(() => { m.textContent = ''; }, 6000); }
 async function copyBm() { try { await navigator.clipboard.writeText(document.getElementById('bm-src').value); alert('복사했습니다 — flex.team 구성원 화면의 Console 에 붙여 넣고 Enter.'); } catch (e) { document.getElementById('bm-src').select(); alert('Ctrl+C 로 복사해 주세요.'); } }
