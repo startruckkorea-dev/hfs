@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HFS · Flex 구성원 → employee_search</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.0/lib/msal-browser.min.js"></script>
 <style>
 /* HFS — Flex 구성원 목록(search-users 응답)을 APS 공통 직원 명부(employee_search.xlsx) 양식으로 바꾼다.
-   모든 처리는 이 브라우저 안에서만 한다(서버로 보내지 않는다). 저장소는 공개라 직원 정보는 코드에 넣지 않는다. */
+   Flex 데이터 처리는 이 브라우저 안에서만 한다(서버로 보내지 않는다). 저장소는 공개라 직원 정보는 코드에 넣지 않는다.
+   10-01: 로그인(M365) + 권한(system_config ADMIN_SP_1 만) + 접근 이력(STK-DB Logging_data/APS/HFS) 추가. */
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',-apple-system,'Malgun Gothic',sans-serif;background:#f3f2f1;color:#323130;font-size:14px}
 .wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
@@ -59,17 +61,65 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
 .chg-old{color:#a4262c;text-decoration:line-through}
 .chg-new{color:#107c10;font-weight:600}
 .hidden{display:none}
+/* 로그인 · 접근 거부 화면(10-01) — SPG 등 다른 STK 시스템과 같은 구성 */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(145deg,#0f2744 0%,#101B34 100%)}
+.login-box{background:#fff;border-radius:14px;padding:32px 30px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
+.login-title{font-size:.95rem;font-weight:700;color:#101B34;margin-bottom:4px}
+.login-co{font-size:.74rem;color:#8A94A6;margin-bottom:5px}
+.login-guide{font-size:.74rem;color:#8A94A6;margin-bottom:16px;line-height:1.6}
+#btn-login{background:linear-gradient(135deg,#2F7B7A,#1A2B4C);color:#fff;border:none;border-radius:8px;padding:11px 0;font-size:.85rem;font-weight:600;cursor:pointer;width:100%;font-family:inherit}
+#btn-login:disabled{background:#cbd5e0;cursor:not-allowed}
+#login-err{color:#C1352E;font-size:.78rem;margin-top:10px;display:none;line-height:1.6;word-break:break-all}
+.deny-box{background:#fff;border-radius:14px;padding:36px 40px;max-width:400px;width:92%;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.25)}
+.deny-ico{width:52px;height:52px;background:#fef2f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:#ef4444;font-size:1.4rem;font-weight:700}
+.deny-title{font-size:1rem;font-weight:700;color:#0f2744;margin-bottom:8px}
+.deny-text{font-size:.82rem;color:#64748b;line-height:1.7;margin-bottom:18px}
+.deny-text code{background:#f3f2f1;border-radius:3px;padding:0 4px;font-size:.76rem}
+.deny-ask{background:#f0f6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin-bottom:20px;text-align:left;font-size:.78rem;color:#374151;line-height:1.8}
+.deny-ask b{color:#1d4ed8}
+.page-footer{position:fixed;bottom:0;left:0;right:0;padding:9px 24px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:rgba(255,255,255,.55);background:rgba(0,0,0,.18);gap:12px;flex-wrap:wrap}
+.who{display:flex;align-items:center;gap:8px;font-size:.76rem;color:#605e5c;flex-wrap:wrap;justify-content:flex-end}
+.who .chip{background:#f3f2f1;border-radius:12px;padding:3px 10px;color:#323130}
 @media(max-width:640px){.header,.card{padding:14px}}
 </style>
 </head>
 <body>
-<div class="wrap">
+<!-- 로그인(10-01) — 다른 APS 시스템과 같은 Entra 앱 · M365 계정. system_config_final.xlsx 의 ADMIN_SP_1 에 적힌 사람만 들어온다 -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-title">HFS — Flex 구성원 → 직원 명부</div>
+    <div class="login-co">Star Truck Korea · employee_search 관리 도구</div>
+    <div class="login-guide">Hyosung M365 계정으로 로그인하세요<br><span style="color:#a19f9d">관리자(ADMIN_SP_1) 전용 · 접근 시도는 APS 이력에 남습니다</span></div>
+    <button id="btn-login" disabled>로딩 중...</button>
+    <div id="login-err"></div>
+  </div>
+  <div class="page-footer">
+    <span>© 2026 Star Truck Korea · HFS</span>
+    <span>This system is internally developed by Star Truck Korea. Unauthorized access is strictly prohibited.</span>
+  </div>
+</div>
+<!-- 접근 거부(10-01) -->
+<div id="deny-screen" class="hidden" style="display:none;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(145deg,#0f2744 0%,#101B34 100%)">
+  <div class="deny-box">
+    <div class="deny-ico">!</div>
+    <div class="deny-title">접근 권한 없음</div>
+    <div class="deny-text" id="deny-text">관리자(ADMIN_SP_1) 전용 도구입니다.</div>
+    <div class="deny-ask"><b>문의</b> — <span id="deny-contact">stk_it@hyosung.com</span><br>이 접근 시도는 APS 이력(Logging_data/APS/HFS)에 기록되었습니다.</div>
+    <button class="btn" onclick="signOut()">다른 계정으로 로그인</button>
+  </div>
+</div>
+
+<div class="wrap hidden" id="app">
   <div class="header">
     <div>
       <div class="title">HFS — Flex 구성원 → 직원 명부(employee_search)</div>
       <div class="sub">Flex 구성원 화면의 응답(JSON · HAR)을 넣으면 APS 공통 양식(Company · Department · Team · EngName · EMail · WMC_old · Boss · Boss of Boss)의 Excel 로 만들어 줍니다.</div>
     </div>
-    <span class="safe">🔒 이 브라우저 안에서만 처리 · 서버 전송 없음</span>
+    <div class="who">
+      <span class="safe">🔒 Flex 데이터는 이 브라우저 안에서만 처리 · 로그인 · 내려받기 이력만 STK-DB 에 기록</span>
+      <span class="chip" id="who-name"></span>
+      <button class="btn" onclick="signOut()">로그아웃</button>
+    </div>
   </div>
 
   <!-- 1. 데이터 넣기 -->
@@ -122,7 +172,8 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
       <label style="font-size:.78rem;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="opt-loa" checked onchange="build()"> 휴직자 포함</label>
       <label style="font-size:.78rem;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="opt-ext" checked onchange="build()"> 계약직(.ext) 포함</label>
       <span style="flex:1"></span>
-      <button class="btn" onclick="document.getElementById('cmp-file').click()">기존 employee_search.xlsx 와 비교</button>
+      <button class="btn" onclick="compareWithDb()" title="STK-DB 문서 라이브러리의 employee_search.xlsx(지금 APS 가 쓰는 명부)를 읽어 비교">STK-DB 현재 명부와 비교</button>
+      <button class="btn" onclick="document.getElementById('cmp-file').click()">파일로 비교(xlsx)</button>
       <input type="file" id="cmp-file" accept=".xlsx,.xls" class="hidden" onchange="onCompare(this.files[0]);this.value=''">
       <button class="btn btn-p" id="btn-dl" onclick="download()">⬇ Excel 다운로드</button>
     </div>
@@ -313,16 +364,28 @@ function renderTable() {
   if (cm) { const gone = Object.keys(cm).filter(e => !ROWS.some(r => r.EMail === e)); tail = gone.map(e => '<tr style="background:#fdf2f3"><td></td><td colspan="9">' + esc(cm[e].EngName) + ' · ' + esc(e) + ' <span class="pill p-del">기존에만 있음 — 새 파일에서 빠짐</span></td><td></td></tr>').join(''); }
   document.getElementById('tbl').innerHTML = head + body + tail;
 }
-async function onCompare(file) {
-  if (!file) return;
-  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+async function onCompare(file) { if (file) applyCompare(file.name, await file.arrayBuffer()); }
+// STK-DB 문서 라이브러리 루트의 employee_search.xlsx(APS 전 시스템이 읽는 명부)를 바로 읽어 비교한다(10-01) — 조회만, 이력은 남기지 않는다
+async function compareWithDb() {
+  const m = document.getElementById('cmp-msg');
+  try {
+    m.className = 'msg'; m.textContent = 'STK-DB 의 employee_search.xlsx 를 읽는 중…';
+    const d = await _getLogDriveId(); if (!d) throw new Error('STK-DB 드라이브를 찾지 못했습니다');
+    const t = await token();
+    const res = await fetch(GRAPH + '/drives/' + d + '/root:/employee_search.xlsx:/content', { headers: { Authorization: 'Bearer ' + t }, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    applyCompare('STK-DB employee_search.xlsx', await res.arrayBuffer());
+  } catch (e) { m.className = 'msg err'; m.textContent = '현재 명부를 읽지 못했습니다: ' + e.message; }
+}
+function applyCompare(name, buf) {
+  const wb = XLSX.read(buf, { type: 'array' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
   const byEmail = {}; rows.forEach(r => { const e = String(r.EMail || r.email || '').trim().toLowerCase(); if (e) byEmail[e] = r; });
-  CMP = { name: file.name, byEmail };
+  CMP = { name, byEmail };
   const nNew = ROWS.filter(r => !byEmail[r.EMail]).length, nGone = Object.keys(byEmail).filter(e => !ROWS.some(r => r.EMail === e)).length;
   const nChg = ROWS.filter(r => byEmail[r.EMail] && ['Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].some(h => String(byEmail[r.EMail][h] || '').trim() !== String(r[h]).trim())).length;
   const m = document.getElementById('cmp-msg'); m.className = 'msg warn';
-  m.textContent = file.name + ' (' + rows.length + '명) 와 비교 — 신규 ' + nNew + ' · 바뀜 ' + nChg + ' · 빠짐 ' + nGone + '. 오른쪽 「기존 대비」 열에서 확인하세요.';
+  m.textContent = name + ' (' + rows.length + '명) 와 비교 — 신규 ' + nNew + ' · 바뀜 ' + nChg + ' · 빠짐 ' + nGone + '. 오른쪽 「기존 대비」 열에서 확인하세요.';
   renderTable();
 }
 function download() {
@@ -333,7 +396,165 @@ function download() {
   ws['!autofilter'] = { ref: ws['!ref'] };
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   const k = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
-  XLSX.writeFile(wb, 'employee_search_' + k + '.xlsx', { compression: true });
+  const name = 'employee_search_' + k + '.xlsx';
+  XLSX.writeFile(wb, name, { compression: true });
+  logAction('Excel 내려받기', { file: name, rows: ROWS.length });   // 명부(직원 정보) 반출 — 사람 수만 남긴다
+}
+
+
+/* ── 로그인 · 권한 · 이력 (10-01) ──────────────────────────
+   · 로그인: 다른 APS 시스템과 같은 Entra 앱(APS-MasterData-App) · MSAL 리다이렉트. 이 페이지의 주소(origin + pathname)가
+     앱 등록의 SPA 리디렉션 URI 에 있어야 한다(없으면 AADSTS50011).
+   · 권한: system_config_final.xlsx(STK-DB 문서 루트)의 ADMIN_SP_1 에 적힌 이메일과 로그인 계정이 같을 때만 화면을 연다.
+     설정을 못 읽으면 아무도 못 들어온다(닫힌 쪽이 기본).
+   · 이력: STK-DB Logging_data/APS/HFS/YYYY-MM-DD/HHmmss_user_rand.json — 로그인 · 접근 차단 · Excel 내려받기(사람 수).
+     다른 시스템의 logAction 과 같은 JSON 이라 APS 관리자 탭 「이력 조회」 에서 APS 아래 「APS/HFS」 로 보인다.
+   · Flex 데이터(HAR · JSON)는 예전처럼 이 브라우저 안에서만 다루고 서버로 보내지 않는다. */
+const CLIENT_ID = '432976c2-b43a-492e-8213-ece505fa1f51';
+const TENANT_ID = '19cab1f5-21f4-44df-8ac6-96d6ca595203';
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+const SCOPES = ['User.Read', 'Sites.ReadWrite.All', 'Files.ReadWrite.All'];
+const SITE_PATH_DB = 'startruckkorea.sharepoint.com:/sites/STK-DB:';
+const LOG_SYSTEM_NAME = 'APS/HFS';     // Logging_data/APS/HFS/… — APS 이력 폴더 안에 HFS 로 구분
+const ADMIN_KEY = 'ADMIN_SP_1';
+const DEFAULT_CONTACT = 'stk_it@hyosung.com';
+let msalApp = null, user = null, dbSiteId = null, logDriveId = null, _sysConfig = null;
+
+window.addEventListener('load', async () => {
+  const btn = document.getElementById('btn-login');
+  const fallback = setTimeout(() => { if (btn.disabled) { btn.disabled = false; btn.textContent = 'Hyosung M365 계정으로 로그인'; } }, 5000);
+  try {
+    msalApp = new msal.PublicClientApplication({
+      auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/' + TENANT_ID, redirectUri: window.location.origin + window.location.pathname },
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
+    });
+    await msalApp.initialize();
+    clearTimeout(fallback);
+    const resp = await msalApp.handleRedirectPromise();
+    if (resp) { msalApp.setActiveAccount(resp.account); await boot(resp.account); return; }
+    const accounts = msalApp.getAllAccounts();
+    if (accounts.length) { msalApp.setActiveAccount(accounts[0]); await boot(accounts[0]); return; }
+    btn.disabled = false; btn.textContent = 'Hyosung M365 계정으로 로그인';
+  } catch (e) {
+    clearTimeout(fallback); btn.disabled = false; btn.textContent = 'Hyosung M365 계정으로 로그인';
+    loginErr('로그인 준비 오류: ' + e.message);
+  }
+});
+function loginErr(msg) { const el = document.getElementById('login-err'); el.textContent = msg; el.style.display = msg ? 'block' : 'none'; }
+document.getElementById('btn-login').onclick = async () => {
+  try { await msalApp.loginRedirect({ scopes: SCOPES }); } catch (e) { loginErr(e.message); }
+};
+function signOut() { try { msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + window.location.pathname }); } catch (e) { location.reload(); } }
+async function token() {
+  const account = msalApp.getActiveAccount();
+  try { return (await msalApp.acquireTokenSilent({ scopes: SCOPES, account })).accessToken; }
+  catch (e) { await msalApp.acquireTokenRedirect({ scopes: SCOPES }); return null; }
+}
+async function api(path) {
+  const t = await token();
+  const res = await fetch(GRAPH + path, { headers: { Authorization: 'Bearer ' + t } });
+  if (!res.ok) throw new Error(res.status + ' ' + (await res.text()).slice(0, 200));
+  return res.json();
+}
+// 로그인 계정의 이메일 후보 — UPN(username) · id 토큰의 email / preferred_username (모두 소문자)
+function myEmails() {
+  const c = (user && user.idTokenClaims) || {};
+  return [user && user.username, c.email, c.preferred_username].map(x => String(x || '').trim().toLowerCase()).filter(Boolean);
+}
+async function boot(account) {
+  user = account;
+  const btn = document.getElementById('btn-login'); btn.disabled = true; btn.textContent = '권한 확인 중...';
+  let cfg = null;
+  try { cfg = await loadSystemConfig(); } catch (e) { console.warn('[Config]', e.message); }
+  const contact = (cfg && cfg.CONTACT_EMAIL && cfg.CONTACT_EMAIL.email) || DEFAULT_CONTACT;
+  const admin = (cfg && cfg[ADMIN_KEY] && cfg[ADMIN_KEY].email || '').trim().toLowerCase();
+  const me = myEmails();
+  if (!cfg) { showDeny('설정 파일(system_config_final.xlsx)을 읽지 못해 들어갈 수 없습니다.<br>새로고침 후에도 같으면 IT팀에 알려주세요.', contact); logAction('접근 차단', { reason: '설정 읽기 실패', account: me[0] || '' }); return; }
+  if (!admin || !me.includes(admin)) {
+    showDeny('관리자(<code>' + ADMIN_KEY + '</code>) 전용 도구입니다.<br>로그인 계정 <code>' + esc(me[0] || user.name || '') + '</code> 에는 권한이 없습니다.', contact);
+    logAction('접근 차단', { reason: ADMIN_KEY + ' 아님', account: me[0] || '' });
+    return;
+  }
+  logAction('로그인', { account: me[0] || '' });
+  document.getElementById('who-name').textContent = (user.name || '') + ' · ' + (me[0] || '');
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.remove('hidden');
+}
+function showDeny(html, contact) {
+  document.getElementById('deny-text').innerHTML = html;
+  document.getElementById('deny-contact').textContent = contact || DEFAULT_CONTACT;
+  document.getElementById('login-screen').style.display = 'none';
+  const d = document.getElementById('deny-screen'); d.classList.remove('hidden'); d.style.display = 'flex';
+}
+async function _getLogDriveId() {
+  if (logDriveId) return logDriveId;
+  try {
+    if (!dbSiteId) { const s = await api('/sites/' + SITE_PATH_DB); dbSiteId = s.id; }
+    const drivesRes = await api('/sites/' + dbSiteId + '/drives');
+    let docDrive = (drivesRes.value || []).find(d => ['Documents', '문서', 'Shared Documents'].includes(d.name));
+    if (!docDrive && drivesRes.value && drivesRes.value.length) docDrive = drivesRes.value[0];
+    logDriveId = docDrive ? docDrive.id : null;
+  } catch (e) { console.warn('[Log] drive 조회 실패:', e.message); }
+  return logDriveId;
+}
+async function loadSystemConfig() {
+  if (_sysConfig) return _sysConfig;
+  const d = await _getLogDriveId(); if (!d) throw new Error('STK-DB 드라이브를 찾을 수 없음');
+  const t = await token();
+  const res = await fetch(GRAPH + '/drives/' + d + '/root:/system_config_final.xlsx:/content', { headers: { Authorization: 'Bearer ' + t }, cache: 'no-store' });
+  if (!res.ok) throw new Error('system_config_final.xlsx HTTP ' + res.status);
+  const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+  const cfg = {};
+  rows.forEach(row => {
+    const key = (row[0] || '').toString().trim();
+    if (!key) return;
+    cfg[key] = { name: (row[1] || '').toString().trim(), email: (row[2] || '').toString().trim() };
+  });
+  _sysConfig = cfg;
+  return cfg;
+}
+const _ensuredLogFolders = new Set();
+async function _ensureLogFolder(driveId, folderPath, t) {
+  if (_ensuredLogFolders.has(folderPath)) return true;
+  const parts = folderPath.split('/').filter(Boolean);
+  let cur = '';
+  try {
+    for (const part of parts) {
+      const nextPath = cur ? cur + '/' + part : part;
+      const checkRes = await fetch(`${GRAPH}/drives/${driveId}/root:/${nextPath}`, { headers: { Authorization: 'Bearer ' + t } });
+      if (checkRes.ok) { cur = nextPath; continue; }
+      const parentUrl = cur ? `${GRAPH}/drives/${driveId}/root:/${cur}:/children` : `${GRAPH}/drives/${driveId}/root/children`;
+      const res = await fetch(parentUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: part, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }) });
+      if (!res.ok && res.status !== 409) { console.warn('[Log] 폴더 생성 실패:', nextPath, res.status); return false; }
+      cur = nextPath;
+    }
+    _ensuredLogFolders.add(folderPath);
+    return true;
+  } catch (e) { console.warn('[Log] 폴더 생성 오류:', e.message); return false; }
+}
+// 다른 시스템의 logAction 과 같은 파일 · JSON 모양(timestampKST · user · system · action · detail) — fire-and-forget, 실패해도 화면은 그대로
+function logAction(action, detail) {
+  (async () => {
+    try {
+      const d = await _getLogDriveId(); if (!d) return;
+      const t = await token(); if (!t) return;
+      const now = new Date(Date.now() + 9 * 3600 * 1000);   // KST
+      const p = n => String(n).padStart(2, '0');
+      const dateStr = `${now.getUTCFullYear()}-${p(now.getUTCMonth() + 1)}-${p(now.getUTCDate())}`;
+      const timeStr = `${p(now.getUTCHours())}${p(now.getUTCMinutes())}${p(now.getUTCSeconds())}`;
+      const rawUser = myEmails()[0] || (user && user.name) || 'unknown';
+      const userTag = rawUser.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '_');
+      const rand = Math.random().toString(36).slice(2, 6);
+      const folderPath = `Logging_data/${LOG_SYSTEM_NAME}/${dateStr}`;
+      if (!(await _ensureLogFolder(d, folderPath, t))) return;
+      const path = `/${folderPath}/${timeStr}_${userTag}_${rand}.json`;
+      const body = JSON.stringify({ timestampKST: `${dateStr} ${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())}`,
+        user: rawUser, system: LOG_SYSTEM_NAME, action, detail: detail || {} });
+      await fetch(GRAPH + '/drives/' + d + '/root:' + path + ':/content', { method: 'PUT', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body });
+    } catch (e) { console.warn('[Log] 기록 실패(무시됨):', e.message); }
+  })();
 }
 
 /* ── 시작 ─────────────────────────────────────────────── */
