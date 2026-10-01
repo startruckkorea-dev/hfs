@@ -125,12 +125,27 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
   <!-- 1. 데이터 넣기 -->
   <div class="card">
     <div class="section-title">1. Flex 데이터 넣기</div>
-    <div class="howto">
-      <b>받는 방법</b> — flex.team <b>구성원</b> 화면에서 <code>F12</code> → <b>네트워크</b> 탭 → 필터에 <code>search-users</code> →
-      구성원 목록을 <b>끝까지 내려</b> 모든 요청(20명씩)이 나오게 한 뒤,<br>
-      ① 요청 목록에서 오른쪽 클릭 → <b>「모두 HAR로 저장(콘텐츠 포함)」</b> 한 파일을 아래에 끌어 놓거나 (권장 — 한 번에 전부),
-      ② 각 요청의 <b>응답</b> 탭 내용을 차례로 복사해 아래 칸에 이어 붙여 넣으세요(여러 개를 그냥 이어 붙여도 됩니다).
+    <div class="howto" style="background:#f0f6ff;border-color:#bfdbfe">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <b>자동으로 가져오기(권장)</b>
+        <a id="bm-link" class="btn btn-p" href="#" draggable="true" style="text-decoration:none" title="이 단추를 브라우저 북마크 바로 끌어다 놓으세요" onclick="bmClick(event)">📥 HFS 수집</a>
+        <span id="bm-msg" style="color:#0b5fa5"></span>
+      </div>
+      ① 위 「HFS 수집」 단추를 브라우저 <b>북마크 바로 끌어다 놓으세요</b>(한 번만). ②
+      <a href="https://flex.team/people/users" target="_blank" rel="noopener">flex.team 구성원 화면</a>을 열고 그 북마크를 누르면 목록을 <b>끝까지 자동으로 읽어</b> 이 화면으로 보내 줍니다
+      (HFS 창이 새로 열림 · 로그인이 필요하면 그 창에서 로그인하면 이어서 들어옵니다). Flex 데이터는 브라우저 안에서만 오갑니다.
+      <details style="margin-top:6px"><summary>북마크 대신 콘솔에 붙여 넣기</summary>
+        <div class="rule">flex.team 구성원 화면에서 <code>F12</code> → <b>Console</b> 탭에 아래를 붙여 넣고 Enter (처음엔 <code>allow pasting</code> 을 먼저 입력하라고 할 수 있습니다).
+          <button class="btn" style="padding:3px 10px;margin-left:6px" onclick="copyBm()">복사</button></div>
+        <textarea id="bm-src" readonly spellcheck="false" style="min-height:70px;font-size:.66rem"></textarea>
+      </details>
     </div>
+    <details class="howto" style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600;color:#323130">직접 넣기(HAR · JSON) — 자동 수집이 안 될 때</summary>
+      <div style="margin-top:6px">flex.team <b>구성원</b> 화면에서 <code>F12</code> → <b>네트워크</b> 탭 → 필터에 <code>search-users</code> →
+      구성원 목록을 <b>끝까지 내려</b> 모든 요청(20명씩)이 나오게 한 뒤,<br>
+      ① 요청 목록에서 오른쪽 클릭 → <b>「모두 HAR로 저장(콘텐츠 포함)」</b> 한 파일을 아래에 끌어 놓거나 (한 번에 전부),
+      ② 각 요청의 <b>응답</b> 탭 내용을 차례로 복사해 아래 칸에 이어 붙여 넣으세요(여러 개를 그냥 이어 붙여도 됩니다).</div>
+    </details>
     <div class="drop" id="drop" onclick="document.getElementById('file').click()">
       <div class="big">📂 HAR · JSON · TXT 파일을 끌어 놓거나 클릭해 고르기</div>
       <div class="small">여러 파일을 한 번에 넣어도 됩니다 · 같은 사람은 한 번만 셉니다</div>
@@ -182,6 +197,105 @@ details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
   </div>
 </div>
 
+<script type="text/plain" id="hfs-collector">
+(async () => {
+  /* HFS 수집 — flex.team 구성원 화면에서 실행(북마클릿 · 콘솔). 구성원 목록 요청(search-users)을 한 번 잡아 같은 요청으로 첫 페이지부터
+     끝까지 다시 읽고, HFS 창으로 보낸다(postMessage — 서버로 가지 않음). 다시 읽기가 안 되면 화면을 끝까지 내리며 응답을 모은다. */
+  var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin;
+  if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
+  if (window.__hfsRun) { try { window.__hfsRun.focus(); } catch (e) {} return; }
+  var hfsWin = window.open(HFS, 'hfs');   /* 클릭 직후(await 전)에 열어야 팝업 차단에 안 걸린다 */
+  window.__hfsRun = hfsWin || true;
+  var box = document.getElementById('__hfs_box');
+  if (!box) { box = document.createElement('div'); box.id = '__hfs_box'; box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#101B34;color:#fff;font:13px/1.5 "Segoe UI",sans-serif;padding:12px 16px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:380px'; document.body.appendChild(box); }
+  var esc = function (s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
+  var say = function (t, bad) { box.innerHTML = '<b style="color:#8fd3ff">HFS 수집</b> <span' + (bad ? ' style="color:#ffb4b4"' : '') + '>' + t + '</span>'; };
+  var done = function () { window.__hfsRun = null; };
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  say('준비 중…');
+  /* 1) 요청 가로채기 — fetch · XMLHttpRequest 둘 다 */
+  var seen = [], responses = [];
+  var F = window.fetch;
+  window.fetch = async function (input, init) {
+    var url = typeof input === 'string' ? input : (input && input.url) || '', pre = null;
+    if (/search-users/i.test(url)) {
+      try {   /* 보내기 전에 본문을 복사해 둔다(보낸 뒤엔 Request 본문을 다시 읽을 수 없다) */
+        var h = {}, src = (init && init.headers) || (input && input.headers);
+        if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); }
+        var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        var body = init && init.body;
+        if (body == null && input && typeof input.clone === 'function') { try { body = await input.clone().text(); } catch (e) {} }
+        pre = { url: url, method: method, headers: h, body: typeof body === 'string' ? body : null };
+      } catch (e) {}
+    }
+    var res = await F.apply(this, arguments);
+    if (pre) { seen.push(pre); try { res.clone().json().then(function (j) { responses.push(j); }).catch(function () {}); } catch (e) {} }
+    return res;
+  };
+  var XO = XMLHttpRequest.prototype.open, XS = XMLHttpRequest.prototype.send, XH = XMLHttpRequest.prototype.setRequestHeader;
+  XMLHttpRequest.prototype.open = function (m, u) { this.__hfs = { method: String(m).toUpperCase(), url: String(u), headers: {} }; return XO.apply(this, arguments); };
+  XMLHttpRequest.prototype.setRequestHeader = function (k, v) { if (this.__hfs) this.__hfs.headers[k] = v; return XH.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function (b) {
+    var r = this.__hfs, x = this;
+    if (r && /search-users/i.test(r.url)) { r.body = typeof b === 'string' ? b : null; seen.push(r); x.addEventListener('load', function () { try { responses.push(JSON.parse(x.responseText)); } catch (e) {} }); }
+    return XS.apply(this, arguments);
+  };
+  /* 2) 목록을 아래로 내려 요청을 한 번 일으킨다 */
+  var scrollers = function () { return Array.prototype.filter.call(document.querySelectorAll('*'), function (el) { var s = getComputedStyle(el); return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 40; }); };
+  var nudge = function () { scrollers().forEach(function (el) { el.scrollTop = el.scrollHeight; }); window.scrollTo(0, document.documentElement.scrollHeight); };
+  say('목록을 아래로 내려 구성원 요청을 잡는 중… 안 잡히면 목록을 직접 조금 내려 주세요.');
+  for (var i = 0; i < 120 && !seen.length; i++) { if (i % 3 === 0) nudge(); await sleep(500); }
+  if (!seen.length) { say('구성원 목록 요청(search-users)을 못 봤습니다. 구성원 화면을 새로고침한 뒤 다시 눌러 주세요.', 1); done(); return; }
+  var T = seen[0];
+  /* 3) 잡은 요청으로 첫 페이지부터 끝까지 다시 읽는다 */
+  var users = new Map(), total = 0;
+  var add = function (j) { var L = (j && (j.list || (j.data && j.data.list))) || []; L.forEach(function (u) { var e = u && u.basicInfo && u.basicInfo.email; if (e) users.set(String(e).trim().toLowerCase(), u); }); if (j && j.total) total = j.total; return j; };
+  var withCont = function (cont) {   /* 잡은 요청에서 continuation 자리만 바꾼다 — JSON 본문이면 본문에, 아니면 주소의 query 에 */
+    var url = T.url, body = T.body, inBody = false;
+    if (body) {
+      try { var o = JSON.parse(body); if (o && typeof o === 'object' && !Array.isArray(o)) { if (cont) o.continuation = cont; else if ('continuation' in o) o.continuation = null; body = JSON.stringify(o); inBody = true; } }
+      catch (e) { if (/"continuation"/.test(body)) { body = body.replace(/"continuation"\s*:\s*(null|"[^"]*")/, '"continuation":' + (cont ? JSON.stringify(cont) : 'null')); inBody = true; } }
+    }
+    try { var u = new URL(url, location.href); if (!inBody || u.searchParams.has('continuation')) { if (cont) u.searchParams.set('continuation', cont); else u.searchParams.delete('continuation'); url = u.toString(); } } catch (e) {}
+    return { url: url, body: body };
+  };
+  var ok = true;
+  try {
+    var cont = null, prevSize = -1, stuck = 0;
+    for (var page = 0; page < 100; page++) {
+      var q = withCont(cont);
+      var res = await F(q.url, { method: T.method, headers: T.headers, body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var j = add(await res.json());
+      say('읽는 중… ' + users.size + (total ? ' / ' + total : '') + '명');
+      if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
+      if (users.size === prevSize) { if (++stuck >= 2) throw new Error('같은 페이지가 되풀이됨'); } else stuck = 0;   /* continuation 이 안 먹으면 폴백으로 */
+      prevSize = users.size; cont = j.continuation;
+    }
+  } catch (e) { ok = false; say('다시 읽기 실패(' + esc(e.message) + ') — 화면을 끝까지 내리면서 모읍니다.', 1); }
+  if (!ok || !users.size) {
+    responses.splice(0).forEach(add);
+    var last = -1, still = 0;
+    for (var k = 0; k < 240 && still < 8; k++) { nudge(); await sleep(500); responses.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } say('모으는 중… ' + users.size + (total ? ' / ' + total : '') + '명'); }
+  }
+  if (!users.size) { say('구성원을 하나도 못 읽었습니다. 구성원 화면을 새로고침한 뒤 다시 눌러 주세요.', 1); done(); return; }
+  /* 4) HFS 창으로 보낸다 — HFS 가 받았다고 답할 때까지 1초마다(로그인 중이면 기다린다) */
+  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now() }, acked = false, waiting = false;
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== ORG || !ev.data) return;
+    if (ev.data.type === 'hfs-flex-ack') { acked = true; say(users.size + '명을 HFS 로 보냈습니다 ✓ — HFS 창에서 이어서 하세요.' + (total && users.size < total ? '<br>⚠ Flex 전체 ' + total + '명 중 ' + users.size + '명만 받았습니다 — 구성원 화면을 새로고침한 뒤 다시 눌러 보세요.' : '')); done(); }
+    else if (ev.data.type === 'hfs-flex-wait') { waiting = true; }
+  });
+  say(users.size + '명 읽음 — HFS 창으로 보내는 중…');
+  for (var n = 0; n < 600 && !acked; n++) {
+    if (!hfsWin || hfsWin.closed) { say('HFS 창이 닫혔습니다. 다시 눌러 주세요.', 1); done(); return; }
+    try { hfsWin.postMessage(payload, ORG); } catch (e) {}
+    if (waiting) say(users.size + '명 읽음 — HFS 창에서 로그인하면 자동으로 들어갑니다…');
+    await sleep(1000);
+  }
+  if (!acked) { say('HFS 창이 응답하지 않습니다. HFS 에 로그인한 뒤 다시 눌러 주세요.', 1); done(); }
+})();
+</script>
 <script>
 /* ── 기본 매핑(팀 → Department). 처음 쓰는 브라우저의 출발점이며 화면에서 바꾸면 이 브라우저에 저장된다. ── */
 const DEFAULT_MAP = {
@@ -479,6 +593,7 @@ async function boot(account) {
   document.getElementById('who-name').textContent = (user.name || '') + ' · ' + (me[0] || '');
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.remove('hidden');
+  _authorized = true; flexInboxFlush();   // 로그인 전에 flex.team 북마클릿이 보낸 목록이 있으면 지금 넣는다
 }
 function showDeny(html, contact) {
   document.getElementById('deny-text').innerHTML = html;
@@ -578,8 +693,38 @@ function logAction(action, detail) {
   })();
 }
 
+/* ── Flex 자동 수집 받기(10-01) ──────────────────────────
+   flex.team 탭에서 북마클릿(#hfs-collector)이 구성원 목록을 postMessage 로 보낸다(브라우저 안에서만 오간다 — 서버 없음).
+   보낸 쪽 origin 이 flex.team 일 때만 받고, 로그인 · 권한 확인 전이면 담아 뒀다가 들어온 뒤 넣는다. 받았다는 답(ack)은 실제로 넣은 뒤에만 보낸다. */
+const FLEX_ORIGIN = 'https://flex.team';
+let _flexInbox = null, _authorized = false;
+window.addEventListener('message', ev => {
+  if (ev.origin !== FLEX_ORIGIN || !ev.data || ev.data.type !== 'hfs-flex-users' || !Array.isArray(ev.data.users)) return;
+  _flexInbox = ev.data;
+  if (_authorized) { const n = flexInboxFlush(); try { ev.source.postMessage({ type: 'hfs-flex-ack', count: n }, ev.origin); } catch (e) {} }
+  else { try { ev.source.postMessage({ type: 'hfs-flex-wait' }, ev.origin); } catch (e) {} }
+});
+function flexInboxFlush() {
+  if (!_flexInbox) return 0;
+  const d = _flexInbox; _flexInbox = null; let n = 0;
+  d.users.forEach(u => { const e = u && u.basicInfo && u.basicInfo.email; if (!e) return; USERS.set(String(e).trim().toLowerCase(), u); n++; });
+  afterIngest('Flex 자동 수집 ' + n + '명' + (d.total ? ' / Flex 전체 ' + d.total + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+  try { window.focus(); } catch (e) {}
+  return n;
+}
+/* 북마클릿 단추 — href 를 javascript: 로 만들어 북마크 바로 끌어다 놓을 수 있게. 이 화면에서 누르면 실행하지 않고 안내만 */
+function bmSetup() {
+  // 주석(/* */)과 들여쓰기를 빼서 북마크 URL 을 줄인다(수집 코드엔 줄 주석 · '/*' 가 든 문자열이 없다)
+  const src = (document.getElementById('hfs-collector').textContent || '').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+  document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(src);
+  document.getElementById('bm-src').value = src;
+}
+function bmClick(ev) { ev.preventDefault(); const m = document.getElementById('bm-msg'); m.textContent = '이 단추를 북마크 바에 끌어다 놓은 뒤, flex.team 구성원 화면에서 눌러 주세요.'; setTimeout(() => { m.textContent = ''; }, 6000); }
+async function copyBm() { try { await navigator.clipboard.writeText(document.getElementById('bm-src').value); alert('복사했습니다 — flex.team 구성원 화면의 Console 에 붙여 넣고 Enter.'); } catch (e) { document.getElementById('bm-src').select(); alert('Ctrl+C 로 복사해 주세요.'); } }
+
 /* ── 시작 ─────────────────────────────────────────────── */
 document.getElementById('ovr').value = ls.get(LS_OVR) ?? DEFAULT_OVR;
+bmSetup();
 const dz = document.getElementById('drop');
 ['dragenter', 'dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('on'); }));
 ['dragleave', 'drop'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('on'); }));
