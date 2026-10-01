@@ -8,7 +8,7 @@ try { hfsWin.focus(); } catch (e) {}
 window.__hfsRun = hfsWin;
 var diag = [], lastProg = null, finished = false;
 var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
-var V = 6;
+var V = 8;
 var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
 var beat = setInterval(function () { if (finished || !lastProg) return; if (hfsWin.closed) { clearInterval(beat); window.__hfsRun = null; return; } try { hfsWin.postMessage(lastProg, ORG); } catch (e) {} }, 1000);
 var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; };
@@ -77,6 +77,7 @@ users = new Map(); total = 0;
 var cont = null, pages = 0, prevSize = -1;
 for (var pg = 0; pg < 100; pg++) {
 var j = add(await send(T, place(T, T.slot, cont))); pages++;
+log('  p' + pages + ': ' + listOf(j).length + '명 · hasNext ' + (j && j.hasNext) + ' · 누적 ' + users.size);
 prog('read', { count: users.size, total: total, pages: pages });
 if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
 if (users.size === prevSize && pg > 0) throw new Error('같은 페이지가 되풀이됨');
@@ -142,9 +143,9 @@ hookTab();
 for (var i = 0; i < 25 && !sink().caps.length; i++) { nudgeIn(window); await sleep(400); }
 log('탭 잡기: ' + sink().caps.length + '건');
 };
-var ok = false;
+var ok = false, best = new Map(), keepBest = function () { if (users.size > best.size) best = new Map(users); };
 var T = loadTpl();
-if (T) { log('저장된 틀 사용: ' + T.method + ' ' + pathOf(T.url)); try { ok = await readAll(T); } catch (e) { log('저장된 틀 실패: ' + e.message + ' → 다시 잡는다'); dropTpl(); } }
+if (T) { log('저장된 틀 사용: ' + T.method + ' ' + pathOf(T.url)); try { ok = await readAll(T); } catch (e) { keepBest(); log('저장된 틀 실패: ' + e.message + ' → 다시 잡는다'); dropTpl(); } }
 if (!ok) {
 var caps = [], liveRes = [], sink = function () { return window.__hfsSink; };
 window.__hfsSink = { caps: caps, liveRes: liveRes };
@@ -183,19 +184,29 @@ else { probe = await send(C, place(C, c, null)); var em = emailsOf(probe); if (e
 } catch (e) { log('후보 ' + cname(c) + ': ' + e.message); }
 }
 log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 찾음');
-if (slot) { C.slot = slot; try { ok = await readAll(C); saveTpl(C, slot); } catch (e) { log('읽기 실패: ' + e.message); } }
+if (slot) { C.slot = slot; try { ok = await readAll(C); saveTpl(C, slot); } catch (e) { keepBest(); log('읽기 실패: ' + e.message); } }
 if (!ok) {
-users = new Map(); total = 0; liveRes.splice(0).forEach(add);
+users = new Map(); total = 0; caps.forEach(function (c) { add(c.res); }); liveRes.splice(0);
 hookTab();
-var last = -1, still = 0;
-for (var k = 0; k < 150 && still < 10 && !complete(); k++) { if (frame) nudgeIn(frame.contentWindow); nudgeIn(window); await sleep(400); liveRes.splice(0).forEach(add); if (users.size === last) still++; else { still = 0; last = users.size; } prog('read', { count: users.size, total: total, scroll: true }); }
-log('모음: ' + users.size + '명' + (total ? ' / ' + total : ''));
+var lastNext = true; caps.forEach(function (c) { if (c.res && c.res.hasNext === false) lastNext = false; });
+var toBottom = function (w) { try { scrollersOf(w.document).forEach(function (el) { el.scrollTop = el.scrollHeight; var last = el.lastElementChild; try { if (last) last.scrollIntoView({ block: 'end' }); } catch (e) {} el.dispatchEvent(new w.Event('scroll', { bubbles: true })); }); w.scrollTo(0, w.document.documentElement.scrollHeight); } catch (e) {} };
+var idle = 0, t0 = Date.now();
+while (Date.now() - t0 < 240000 && !complete() && lastNext && idle < 4) {
+if (frame) toBottom(frame.contentWindow); toBottom(window);
+var before = users.size, got = false;
+for (var w8 = 0; w8 < 25; w8++) { await sleep(200); var nr = liveRes.splice(0); if (nr.length) { nr.forEach(function (j) { add(j); if (j && j.hasNext === false) lastNext = false; }); got = true; break; } }
+if (got && users.size > before) idle = 0; else idle++;
+prog('read', { count: users.size, total: total, scroll: true });
+}
+log('천천히 내리며 모음: ' + users.size + '명' + (total ? ' / ' + total : '') + ' · 마지막 페이지 ' + (!lastNext) + ' · ' + Math.round((Date.now() - t0) / 1000) + '초');
+if (best.size > users.size) { users = best; log('앞서 읽은 ' + best.size + '명을 쓴다'); }
 }
 closeFrame();
 }
 if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
 var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V }, acked = false;
 window.addEventListener('message', function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } });
+log('보냄: ' + users.size + '명' + (total ? ' / ' + total : ''));
 prog('send', { count: users.size, total: total, partial: !complete() });
 for (var n = 0; n < 600 && !acked; n++) {
 if (hfsWin.closed) { done(); return; }
