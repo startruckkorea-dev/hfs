@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HFS · Flex 구성원 → employee_search</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<style>
+/* HFS — Flex 구성원 목록(search-users 응답)을 APS 공통 직원 명부(employee_search.xlsx) 양식으로 바꾼다.
+   모든 처리는 이 브라우저 안에서만 한다(서버로 보내지 않는다). 저장소는 공개라 직원 정보는 코드에 넣지 않는다. */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',-apple-system,'Malgun Gothic',sans-serif;background:#f3f2f1;color:#323130;font-size:14px}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
+.header{background:#fff;border:1px solid #edebe9;border-radius:6px;padding:16px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.header .title{font-size:1.1rem;font-weight:700}
+.header .sub{font-size:.75rem;color:#605e5c;margin-top:3px}
+.header .safe{font-size:.72rem;color:#107c10;background:#dff6dd;border-radius:10px;padding:3px 10px;white-space:nowrap}
+.card{background:#fff;border:1px solid #edebe9;border-radius:6px;padding:20px 24px;margin-bottom:16px}
+.section-title{font-size:.82rem;font-weight:600;color:#0078d4;margin:0 0 12px;padding:5px 10px;background:#f0f6ff;border-radius:4px;border-left:3px solid #0078d4;display:flex;align-items:center;gap:8px}
+.section-title .r{margin-left:auto;font-weight:400;color:#605e5c;font-size:.72rem}
+.howto{font-size:.78rem;color:#605e5c;line-height:1.75;background:#faf9f8;border:1px solid #edebe9;border-radius:6px;padding:10px 14px;margin-bottom:12px}
+.howto b{color:#323130}.howto code{background:#f3f2f1;border-radius:3px;padding:0 4px;font-size:.74rem}
+.drop{border:1.5px dashed #c8c6c4;border-radius:8px;padding:22px;text-align:center;color:#605e5c;cursor:pointer;transition:all .12s}
+.drop:hover,.drop.on{border-color:#0078d4;background:#f0f6ff;color:#0078d4}
+.drop .big{font-size:.9rem;font-weight:600;margin-bottom:4px}
+.drop .small{font-size:.72rem}
+textarea{width:100%;min-height:90px;border:1px solid #d2d0ce;border-radius:4px;padding:8px 10px;font-family:Consolas,monospace;font-size:.72rem;resize:vertical;margin-top:10px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.btn{border:1px solid #d2d0ce;background:#fff;color:#323130;border-radius:4px;padding:7px 16px;font-size:.8rem;cursor:pointer;font-family:inherit}
+.btn:hover{background:#f3f2f1}
+.btn-p{background:#0078d4;border-color:#0078d4;color:#fff;font-weight:600}
+.btn-p:hover{background:#106ebe}
+.btn:disabled{opacity:.5;cursor:default}
+.msg{font-size:.78rem;margin-top:8px;line-height:1.6}
+.msg.ok{color:#107c10}.msg.err{color:#a4262c}.msg.warn{color:#8a6116}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.stat{border:1px solid #edebe9;border-radius:6px;padding:8px 14px;min-width:110px}
+.stat .n{font-size:1.1rem;font-weight:700}.stat .l{font-size:.7rem;color:#605e5c}
+.stat.warn{border-color:#f0d9a0;background:#fdf6e3}.stat.warn .n{color:#8a6116}
+table{width:100%;border-collapse:collapse;font-size:.74rem}
+th{background:#f3f2f1;text-align:left;padding:7px 9px;font-weight:600;font-size:.7rem;border-bottom:1px solid #edebe9;white-space:nowrap;position:sticky;top:0}
+td{padding:6px 9px;border-bottom:1px solid #f3f2f1;white-space:nowrap}
+tr.fl td{background:#fafcff}
+tr.lead td{font-weight:600}
+.tbl{max-height:560px;overflow:auto;border:1px solid #edebe9;border-radius:6px}
+.pill{display:inline-block;font-size:10px;border-radius:10px;padding:1px 7px;margin-left:4px;font-weight:600;vertical-align:1px}
+.p-fl{color:#fff;background:#0078d4}.p-tl{color:#107c10;background:#dff6dd}.p-loa{color:#8a6116;background:#fff4ce}.p-ext{color:#605e5c;background:#edebe9}
+.p-new{color:#107c10;background:#dff6dd}.p-chg{color:#8a6116;background:#fff4ce}.p-del{color:#a4262c;background:#fde7e9}
+.map-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px 14px}
+.map-row{display:flex;align-items:center;gap:8px;font-size:.76rem;padding:3px 0;border-bottom:1px dashed #edebe9}
+.map-row .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.map-row .c{font-size:.68rem;color:#a19f9d}
+.map-row select{border:1px solid #d2d0ce;border-radius:4px;padding:3px 6px;font-size:.74rem;font-family:inherit;min-width:120px}
+.map-row.unk{background:#fdf6e3}
+.rule{font-size:.74rem;color:#605e5c;line-height:1.7;margin-top:10px}
+.rule b{color:#323130}
+details summary{cursor:pointer;font-size:.78rem;font-weight:600;color:#0b5fa5}
+.ovr textarea{min-height:70px}
+.chg-old{color:#a4262c;text-decoration:line-through}
+.chg-new{color:#107c10;font-weight:600}
+.hidden{display:none}
+@media(max-width:640px){.header,.card{padding:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <div class="title">HFS — Flex 구성원 → 직원 명부(employee_search)</div>
+      <div class="sub">Flex 구성원 화면의 응답(JSON · HAR)을 넣으면 APS 공통 양식(Company · Department · Team · EngName · EMail · WMC_old · Boss · Boss of Boss)의 Excel 로 만들어 줍니다.</div>
+    </div>
+    <span class="safe">🔒 이 브라우저 안에서만 처리 · 서버 전송 없음</span>
+  </div>
+
+  <!-- 1. 데이터 넣기 -->
+  <div class="card">
+    <div class="section-title">1. Flex 데이터 넣기</div>
+    <div class="howto">
+      <b>받는 방법</b> — flex.team <b>구성원</b> 화면에서 <code>F12</code> → <b>네트워크</b> 탭 → 필터에 <code>search-users</code> →
+      구성원 목록을 <b>끝까지 내려</b> 모든 요청(20명씩)이 나오게 한 뒤,<br>
+      ① 요청 목록에서 오른쪽 클릭 → <b>「모두 HAR로 저장(콘텐츠 포함)」</b> 한 파일을 아래에 끌어 놓거나 (권장 — 한 번에 전부),
+      ② 각 요청의 <b>응답</b> 탭 내용을 차례로 복사해 아래 칸에 이어 붙여 넣으세요(여러 개를 그냥 이어 붙여도 됩니다).
+    </div>
+    <div class="drop" id="drop" onclick="document.getElementById('file').click()">
+      <div class="big">📂 HAR · JSON · TXT 파일을 끌어 놓거나 클릭해 고르기</div>
+      <div class="small">여러 파일을 한 번에 넣어도 됩니다 · 같은 사람은 한 번만 셉니다</div>
+      <input type="file" id="file" multiple accept=".har,.json,.txt" class="hidden" onchange="onFiles(this.files);this.value=''">
+    </div>
+    <textarea id="paste" placeholder="또는 응답(JSON)을 여기에 붙여 넣기 — {&quot;continuation&quot;: …, &quot;list&quot;: [ … ]} 를 여러 개 이어 붙여도 됩니다"></textarea>
+    <div class="row">
+      <button class="btn btn-p" onclick="onPaste()">붙여 넣은 내용 읽기</button>
+      <button class="btn" onclick="resetAll()">처음부터</button>
+    </div>
+    <div class="msg" id="in-msg"></div>
+  </div>
+
+  <!-- 2. 조직 매핑 -->
+  <div class="card hidden" id="map-card">
+    <div class="section-title">2. 팀 → Department(본부) 매핑 <span class="r">Flex 에는 팀의 상위 조직 정보가 없어 여기서 정합니다 · 이 브라우저에 기억됩니다</span></div>
+    <div class="map-grid" id="map-grid"></div>
+    <div class="rule">
+      <b>보고 구조 규칙</b> — Department 와 같은 이름의 Flex 조직(예: Sales · CSP · PMM · F&amp;C)의 장이 <b>본부장</b>, 각 팀의 장이 <b>팀장</b>,
+      「Star Truck Korea」 의 장이 <b>대표(RD)</b> 입니다.<br>
+      · 팀원: Boss = 팀장, Boss of Boss = 부서장(본부장). 본부장이 팀장을 겸하면 둘 다 본부장. 본부가 없는 팀(HR · Compliance 등)은 부서장 = 그 팀장.<br>
+      · 팀장: Boss = 본부장(본부가 없으면 RD), Boss of Boss = 그 위.<br>
+      · 본부장: Boss = RD, Boss of Boss = <code>-</code> · RD: <code>-</code> / <code>-</code><br>
+      · 본부장 행은 Department · Team 에 본부 이름을 함께 적습니다(예: Sales / Sales).
+    </div>
+    <details class="ovr" style="margin-top:12px">
+      <summary>EngName 직접 지정 (선택)</summary>
+      <div class="rule" style="margin-top:6px">기본 규칙: Flex 표시 이름이 영문 닉네임 한 단어(Jimmy · Gina …)면 「닉네임 + 성」, 아니면 Flex 영문 이름(First Last).
+        규칙과 다르게 적고 싶은 사람만 <code>메일=이름</code> 으로 한 줄씩 적으세요.</div>
+      <textarea id="ovr" spellcheck="false" placeholder="austin.rho@hyosung.com=Chanwhi Rho" oninput="saveOvr();build()"></textarea>
+    </details>
+  </div>
+
+  <!-- 3. 미리보기 -->
+  <div class="card hidden" id="out-card">
+    <div class="section-title">3. 결과 미리보기 <span class="r" id="out-sub"></span></div>
+    <div class="stats" id="stats"></div>
+    <div class="row" style="margin:0 0 10px">
+      <label style="font-size:.78rem;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="opt-loa" checked onchange="build()"> 휴직자 포함</label>
+      <label style="font-size:.78rem;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="opt-ext" checked onchange="build()"> 계약직(.ext) 포함</label>
+      <span style="flex:1"></span>
+      <button class="btn" onclick="document.getElementById('cmp-file').click()">기존 employee_search.xlsx 와 비교</button>
+      <input type="file" id="cmp-file" accept=".xlsx,.xls" class="hidden" onchange="onCompare(this.files[0]);this.value=''">
+      <button class="btn btn-p" id="btn-dl" onclick="download()">⬇ Excel 다운로드</button>
+    </div>
+    <div class="msg" id="cmp-msg"></div>
+    <div class="tbl"><table id="tbl"></table></div>
+  </div>
+</div>
+
+<script>
+/* ── 기본 매핑(팀 → Department). 처음 쓰는 브라우저의 출발점이며 화면에서 바꾸면 이 브라우저에 저장된다. ── */
+const DEFAULT_MAP = {
+  'Sales Operation & Planning': 'Sales', 'BBM & SPV': 'Sales', 'Seoul & Middle Region Sales Branch': 'Sales',
+  'Incheon & North Gyunggi Sales Branch': 'Sales', 'Daegu Gyeongbuk & East Gangwon Branch': 'Sales',
+  'Busan & South Gyeongsang Branch': 'Sales', 'Busan Gyungsang Sales Branch': 'Sales', 'Gwangju Jolla Sales Branch': 'Sales',
+  'Service & Network': 'CSP', 'Technical Support & Training': 'CSP', 'Parts & Logistics': 'CSP',
+  'Product Management': 'PMM', 'Marketing & Communication': 'PMM', 'Homologation & Customer Delivery': 'PMM',
+  'Accounting': 'F&C', 'Controlling': 'F&C', 'Procurement': 'F&C', 'IT': 'F&C',
+  'HR': 'HR', 'Compliance': 'Compliance', 'CEO Office': 'Star Truck Korea',
+};
+const DEFAULT_OVR = 'austin.rho@hyosung.com=Chanwhi Rho';
+const ROOT = 'Star Truck Korea';           // 대표(RD)가 장인 최상위 조직
+const DEPT_ORDER = ['Star Truck Korea', 'Sales', 'CSP', 'PMM', 'F&C', 'HR', 'Compliance'];
+const LS_MAP = 'hfs.map.v1', LS_OVR = 'hfs.ovr.v1';
+const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+
+let USERS = new Map();   // email(소문자) → Flex 사용자 객체
+let MAP = Object.assign({}, DEFAULT_MAP, JSON.parse(ls.get(LS_MAP) || '{}'));
+let ROWS = [], CMP = null;
+
+/* ── 입력 해석 ─────────────────────────────────────────── */
+// 텍스트 안의 JSON 값들을 차례로 꺼낸다(응답 여러 개를 이어 붙인 것 · 줄바꿈 · 쉼표 섞여도 됨).
+function jsonValues(text) {
+  const out = []; let i = 0; const n = text.length;
+  while (i < n) {
+    while (i < n && text[i] !== '{' && text[i] !== '[') i++;
+    if (i >= n) break;
+    let depth = 0, inStr = false, esc = false, j = i;
+    for (; j < n; j++) {
+      const c = text[j];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true; else if (c === '{' || c === '[') depth++; else if (c === '}' || c === ']') { depth--; if (depth === 0) break; }
+    }
+    if (depth !== 0) break;   // 끝까지 닫히지 않음 — 잘린 붙여넣기
+    try { out.push(JSON.parse(text.slice(i, j + 1))); } catch (e) { /* 잘못된 조각은 건너뛴다 */ }
+    i = j + 1;
+  }
+  return out;
+}
+function b64utf8(s) { const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new TextDecoder().decode(u); }
+// 값 하나에서 Flex 사용자 목록을 뽑는다 — search-users 응답({list}) · HAR({log.entries}) · 배열 모두.
+function collectUsers(v, sink) {
+  if (!v || typeof v !== 'object') return;
+  if (v.log && Array.isArray(v.log.entries)) {
+    for (const e of v.log.entries) {
+      const c = e.response && e.response.content; if (!c || !c.text) continue;
+      if (!/search-users|users/i.test((e.request && e.request.url) || '')) continue;
+      let t = c.text; if (c.encoding === 'base64') { try { t = b64utf8(t); } catch (er) { continue; } }
+      jsonValues(t).forEach(x => collectUsers(x, sink));
+    }
+    return;
+  }
+  if (Array.isArray(v)) { v.forEach(x => collectUsers(x, sink)); return; }
+  if (v.basicInfo && v.basicInfo.email) { sink.push(v); return; }
+  if (Array.isArray(v.list)) v.list.forEach(x => collectUsers(x, sink));
+}
+function ingest(text, label) {
+  const found = []; const vals = jsonValues(text);
+  vals.forEach(v => collectUsers(v, found));
+  let added = 0;
+  for (const u of found) { const k = String(u.basicInfo.email).trim().toLowerCase(); if (!USERS.has(k)) added++; USERS.set(k, u); }
+  return { vals: vals.length, found: found.length, added };
+}
+async function onFiles(files) {
+  const parts = [];
+  for (const f of files) { const r = ingest(await f.text(), f.name); parts.push(f.name + ': ' + r.found + '명' + (r.found ? '' : ' (사용자 정보 없음)')); }
+  afterIngest(parts.join(' · '));
+}
+function onPaste() { const t = document.getElementById('paste').value; if (!t.trim()) return; const r = ingest(t, '붙여넣기'); afterIngest('붙여넣기: JSON ' + r.vals + '개 · ' + r.found + '명'); }
+function afterIngest(detail) {
+  const m = document.getElementById('in-msg');
+  if (!USERS.size) { m.className = 'msg err'; m.textContent = '사용자 정보를 찾지 못했습니다 — search-users 응답이나 HAR 파일인지 확인해 주세요. (' + detail + ')'; return; }
+  const total = [...USERS.values()].length;
+  m.className = 'msg ok'; m.textContent = '✓ 누적 ' + total + '명 (' + detail + ')';
+  build();
+}
+function resetAll() { USERS = new Map(); CMP = null; ROWS = []; document.getElementById('paste').value = ''; document.getElementById('in-msg').textContent = ''; document.getElementById('cmp-msg').textContent = ''; ['map-card', 'out-card'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+
+/* ── 변환 ─────────────────────────────────────────────── */
+const cap = s => String(s || '').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+function overrides() {
+  const m = {}; (document.getElementById('ovr').value || '').split('\n').forEach(l => { const i = l.indexOf('='); if (i > 0) m[l.slice(0, i).trim().toLowerCase()] = l.slice(i + 1).trim(); }); return m;
+}
+function engName(b, ovr) {
+  const em = String(b.email).toLowerCase(); if (ovr[em]) return ovr[em];
+  const first = cap(b.nameInEnglishFirst), last = cap(b.nameInEnglishLast), dn = String(b.displayName || '').trim();
+  if (dn && !/\s/.test(dn) && /^[A-Za-z]{3,}$/.test(dn)) return cap(dn) + (last ? ' ' + last : '');   // 영문 닉네임(Jimmy · Gina …) + 성
+  return (first + ' ' + last).trim() || cap(dn) || b.name;
+}
+function convert() {
+  const ovr = overrides();
+  const P = [...USERS.values()].map(u => {
+    const b = u.basicInfo, pos = (u.employeeInfo && u.employeeInfo.positions) || [];
+    const prim = pos.find(p => p.isPrimary) || pos[0] || {};
+    const st = (u.tagInfo && u.tagInfo.userStatuses) || [];
+    return { email: String(b.email).trim().toLowerCase(), name: engName(b, ovr), ko: b.name, team: prim.departmentName || '(소속 없음)', title: prim.jobTitleName || '',
+      heads: pos.filter(p => p.isHeadUser).map(p => p.departmentName), loa: st.includes('LEAVE_OF_ABSENCE'), ext: /\.ext@/i.test(b.email) || /contractor/i.test(prim.jobTitleName || '') };
+  });
+  const headOf = {}; P.forEach(p => p.heads.forEach(t => { if (!headOf[t]) headOf[t] = p; }));
+  const rd = headOf[ROOT];
+  const depts = new Set(Object.values(MAP));
+  // 본부장 = Department 이름과 같은 Flex 조직의 장. 단독 팀(HR = HR)은 본부장이 없다.
+  const lead = d => { if (d === ROOT) return rd || null; const teams = Object.keys(MAP).filter(k => MAP[k] === d); if (teams.length === 1 && teams[0] === d) return null; return headOf[d] || null; };
+  const deptHead = d => lead(d) || (headOf[d] || null);   // 부서장 — 본부가 없으면 그 팀장
+  const out = [];
+  for (const p of P) {
+    let dept, team, boss, boss2, kind, warn = '';
+    if (rd && p === rd) { dept = ROOT; team = ROOT; boss = '-'; boss2 = '-'; kind = 'rd'; }
+    else if (depts.has(p.team) && lead(p.team) === p) { dept = p.team; team = p.team; boss = rd ? rd.name : '-'; boss2 = '-'; kind = 'fl'; }
+    else {
+      team = p.team; dept = MAP[team];
+      if (!dept) { dept = team; warn = '매핑 없음'; }
+      const tl = headOf[team], fl = lead(dept);
+      if (tl === p) { kind = 'tl'; const up = (fl && fl !== p) ? fl : rd; boss = up ? up.name : '-'; boss2 = up === rd || !up ? '-' : (rd ? rd.name : '-'); }
+      else {
+        kind = 'st';
+        const tlx = tl || fl || rd; if (!tl) warn = warn || '팀장 없음';
+        boss = tlx ? tlx.name : '-';
+        const dh = deptHead(dept); boss2 = dh ? dh.name : (rd ? rd.name : '-');
+      }
+    }
+    out.push({ Company: 'STK', Department: dept, Team: team, EngName: p.name, EMail: p.email, WMC_old: '', Boss: boss, 'Boss of Boss': boss2, _kind: kind, _loa: p.loa, _ext: p.ext, _ko: p.ko, _title: p.title, _warn: warn });
+  }
+  const tOrder = {}; Object.keys(MAP).forEach((k, i) => tOrder[k] = i);
+  const dIdx = d => { const i = DEPT_ORDER.indexOf(d); return i < 0 ? 50 : i; };
+  const kIdx = { rd: 0, fl: 0, tl: 1, st: 2 };
+  out.sort((a, b) => dIdx(a.Department) - dIdx(b.Department) || a.Department.localeCompare(b.Department)
+    || (a._kind === 'fl' || a._kind === 'rd' ? -1 : 0) - (b._kind === 'fl' || b._kind === 'rd' ? -1 : 0)
+    || (tOrder[a.Team] ?? 99) - (tOrder[b.Team] ?? 99) || a.Team.localeCompare(b.Team)
+    || kIdx[a._kind] - kIdx[b._kind] || a.EngName.localeCompare(b.EngName));
+  return out;
+}
+
+/* ── 화면 ─────────────────────────────────────────────── */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function renderMap() {
+  const teams = {}; [...USERS.values()].forEach(u => { const pos = (u.employeeInfo && u.employeeInfo.positions) || []; const p = pos.find(x => x.isPrimary) || pos[0]; if (p) teams[p.departmentName] = (teams[p.departmentName] || 0) + 1; });
+  const headTeams = new Set(); [...USERS.values()].forEach(u => ((u.employeeInfo && u.employeeInfo.positions) || []).forEach(p => { if (p.isHeadUser) headTeams.add(p.departmentName); }));
+  const deptOpts = [...new Set([...DEPT_ORDER, ...Object.values(MAP)])];
+  const names = Object.keys(teams).filter(t => !(t === ROOT) && !(deptOpts.includes(t) && !MAP[t] ))
+    .sort((a, b) => (MAP[a] ? 1 : 0) - (MAP[b] ? 1 : 0) || deptOpts.indexOf(MAP[a]) - deptOpts.indexOf(MAP[b]) || a.localeCompare(b));
+  document.getElementById('map-grid').innerHTML = names.map(t => {
+    const v = MAP[t] || '';
+    return '<div class="map-row' + (v ? '' : ' unk') + '"><span class="t" title="' + esc(t) + '">' + esc(t) + ' <span class="c">' + teams[t] + '명</span></span>' +
+      '<select onchange="setMap(this.dataset.t,this.value)" data-t="' + esc(t) + '"><option value="">— 지정 —</option>' +
+      [...deptOpts, '(팀 이름 그대로)'].map(d => '<option' + (d === v ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select></div>';
+  }).join('');
+}
+function setMap(team, dept) { if (!dept) delete MAP[team]; else MAP[team] = dept === '(팀 이름 그대로)' ? team : dept; ls.set(LS_MAP, JSON.stringify(MAP)); build(); }
+function saveOvr() { ls.set(LS_OVR, document.getElementById('ovr').value); }
+function build() {
+  if (!USERS.size) return;
+  document.getElementById('map-card').classList.remove('hidden');
+  document.getElementById('out-card').classList.remove('hidden');
+  renderMap();
+  const all = convert();
+  const incLoa = document.getElementById('opt-loa').checked, incExt = document.getElementById('opt-ext').checked;
+  ROWS = all.filter(r => (incLoa || !r._loa) && (incExt || !r._ext));
+  const warns = ROWS.filter(r => r._warn);
+  const st = [['전체', ROWS.length], ['본부', new Set(ROWS.map(r => r.Department)).size], ['팀', new Set(ROWS.map(r => r.Team)).size],
+    ['휴직', all.filter(r => r._loa).length], ['계약직', all.filter(r => r._ext).length], ['확인 필요', warns.length, warns.length > 0]];
+  document.getElementById('stats').innerHTML = st.map(([l, n, w]) => '<div class="stat' + (w ? ' warn' : '') + '"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>').join('');
+  document.getElementById('out-sub').textContent = warns.length ? '⚠ 노란 줄을 확인하세요(매핑 없음 · 팀장 없음)' : '';
+  renderTable();
+}
+function renderTable() {
+  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'];
+  const cm = CMP ? CMP.byEmail : null;
+  const head = '<tr><th>#</th>' + H.map(h => '<th>' + h + '</th>').join('') + '<th>Flex</th>' + (cm ? '<th>기존 대비</th>' : '') + '</tr>';
+  const body = ROWS.map((r, i) => {
+    const tag = (r._kind === 'rd' || r._kind === 'fl' ? '<span class="pill p-fl">' + (r._kind === 'rd' ? 'RD' : '본부장') + '</span>' : r._kind === 'tl' ? '<span class="pill p-tl">팀장</span>' : '')
+      + (r._loa ? '<span class="pill p-loa">휴직</span>' : '') + (r._ext ? '<span class="pill p-ext">계약직</span>' : '') + (r._warn ? '<span class="pill p-chg">' + r._warn + '</span>' : '');
+    let diff = '';
+    if (cm) { const o = cm[r.EMail]; if (!o) diff = '<span class="pill p-new">신규</span>'; else { const ch = H.filter(h => h !== 'WMC_old' && String(o[h] || '').trim() !== String(r[h] || '').trim()); diff = ch.length ? ch.map(h => '<div><b>' + h + '</b> <span class="chg-old">' + esc(o[h] || '(빈칸)') + '</span> → <span class="chg-new">' + esc(r[h]) + '</span></div>').join('') : '<span style="color:#a19f9d">같음</span>'; } }
+    return '<tr class="' + (r._kind === 'rd' || r._kind === 'fl' ? 'fl lead' : r._kind === 'tl' ? 'lead' : '') + '"' + (r._warn ? ' style="background:#fdf6e3"' : '') + '><td style="color:#a19f9d">' + (i + 1) + '</td>' +
+      H.map(h => '<td>' + esc(r[h]) + '</td>').join('') + '<td>' + esc(r._ko) + ' · ' + esc(r._title) + tag + '</td>' + (cm ? '<td style="white-space:normal;min-width:220px">' + diff + '</td>' : '') + '</tr>';
+  }).join('');
+  let tail = '';
+  if (cm) { const gone = Object.keys(cm).filter(e => !ROWS.some(r => r.EMail === e)); tail = gone.map(e => '<tr style="background:#fdf2f3"><td></td><td colspan="9">' + esc(cm[e].EngName) + ' · ' + esc(e) + ' <span class="pill p-del">기존에만 있음 — 새 파일에서 빠짐</span></td><td></td></tr>').join(''); }
+  document.getElementById('tbl').innerHTML = head + body + tail;
+}
+async function onCompare(file) {
+  if (!file) return;
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+  const byEmail = {}; rows.forEach(r => { const e = String(r.EMail || r.email || '').trim().toLowerCase(); if (e) byEmail[e] = r; });
+  CMP = { name: file.name, byEmail };
+  const nNew = ROWS.filter(r => !byEmail[r.EMail]).length, nGone = Object.keys(byEmail).filter(e => !ROWS.some(r => r.EMail === e)).length;
+  const nChg = ROWS.filter(r => byEmail[r.EMail] && ['Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].some(h => String(byEmail[r.EMail][h] || '').trim() !== String(r[h]).trim())).length;
+  const m = document.getElementById('cmp-msg'); m.className = 'msg warn';
+  m.textContent = file.name + ' (' + rows.length + '명) 와 비교 — 신규 ' + nNew + ' · 바뀜 ' + nChg + ' · 빠짐 ' + nGone + '. 오른쪽 「기존 대비」 열에서 확인하세요.';
+  renderTable();
+}
+function download() {
+  if (!ROWS.length) return;
+  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'];
+  const ws = XLSX.utils.aoa_to_sheet([H, ...ROWS.map(r => H.map(h => r[h]))]);
+  ws['!cols'] = [9, 18, 38, 20, 34, 10, 18, 18].map(w => ({ wch: w }));
+  ws['!autofilter'] = { ref: ws['!ref'] };
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const k = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
+  XLSX.writeFile(wb, 'employee_search_' + k + '.xlsx', { compression: true });
+}
+
+/* ── 시작 ─────────────────────────────────────────────── */
+document.getElementById('ovr').value = ls.get(LS_OVR) ?? DEFAULT_OVR;
+const dz = document.getElementById('drop');
+['dragenter', 'dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('on'); }));
+['dragleave', 'drop'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('on'); }));
+dz.addEventListener('drop', ev => onFiles(ev.dataTransfer.files));
+</script>
+</body>
+</html>
