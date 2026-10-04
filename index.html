@@ -921,6 +921,13 @@ let _push = null;      // 미리 읽어 둔 것 { drive, item, wb, sheet, cols, 
 let _pushBusy = false;
 
 function colLetter(n) { let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - r - 1) / 26; } return s; }
+// Graph 가 주는 UTC 시각을 KST 로 보여 준다. APS 의 다른 화면과 기준을 맞춘다.
+function kstOf(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d.getTime())) return String(iso).replace('T', ' ').slice(0, 16);
+  const k = new Date(d.getTime() + 9 * 3600e3), p = n => String(n).padStart(2, '0');
+  return k.getUTCFullYear() + '-' + p(k.getUTCMonth() + 1) + '-' + p(k.getUTCDate()) + ' ' + p(k.getUTCHours()) + ':' + p(k.getUTCMinutes());
+}
 function kstStamp() {
   const d = new Date(Date.now() + 9 * 3600e3), p = n => String(n).padStart(2, '0');
   return d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + '-' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + p(d.getUTCSeconds());
@@ -964,7 +971,7 @@ async function vlookupProbe(wbUrl, first, list) {
 /* 거울 시트를 첫 시트의 지금 내용에 맞춰 다시 깐다 — 값이 아니라 수식을 넣어 예전 방식 그대로 둔다 */
 async function vlookupRepair(P, SH) {
   const V = P.vl;
-  const eC = colLetter(P.cols.indexOf('EMail') + 1), nC = colLetter(P.cols.indexOf('EngName') + 1);
+  const eC = V.emailCol, nC = V.nameCol;   // 미리보기에서 보여 준 것과 같은 열을 쓴다
   const ref = /^[A-Za-z0-9_]+$/.test(V.ref) ? V.ref : "'" + V.ref.replace(/'/g, "''") + "'";
   const rows = [['EMail', 'EngName']];
   for (let i = 0; i < P.body.length; i++) rows.push(['=' + ref + '!' + eC + (i + 2), '=' + ref + '!' + nC + (i + 2)]);
@@ -1032,6 +1039,7 @@ async function pushOpen() {
     const added = EMP_OWNED.filter(c => cols.indexOf(c) < 0);
     added.forEach(c => cols.push(c));
     const kept = cols.filter(c => c && EMP_OWNED.indexOf(c) < 0);
+    if (vl) { vl.emailCol = colLetter(cols.indexOf('EMail') + 1); vl.nameCol = colLetter(cols.indexOf('EngName') + 1); }   // 거울 수식이 가리킬 열
     const body = ROWS.map(r => { const o = byEmail[String(r.EMail).toLowerCase()];
       return cols.map(c => EMP_OWNED.indexOf(c) >= 0 ? (r[c] == null ? '' : r[c]) : (o && o[c] != null ? o[c] : '')); });
 
@@ -1047,7 +1055,9 @@ async function pushOpen() {
     // 사람이 많이 빠지면 한 번 더 묻는다(휴직 · 계약직 체크를 끈 채로 누른 경우가 대부분이다)
     const offLoa = !document.getElementById('opt-loa').checked, offExt = !document.getElementById('opt-ext').checked;
     const risky = gone.length > 5 || (oldRows.length && gone.length > oldRows.length * 0.2) || offLoa || offExt;
-    _push = { drive, base, item, wb, sheet, sUrl, cols, body, used, oldRows, byEmail, nw, chg, gone, risky, vl };
+    const backupPath = EMP_BACKUP_DIR + '/employee_search_' + kstStamp() + '.xlsx';   // 한 번만 정해 미리보기와 실제가 같게 한다
+    const sig = ROWS.map(r => r.EMail).join('|');                                      // 미리보기 뒤 결과가 바뀌었는지 보는 표식
+    _push = { drive, base, item, wb, sheet, sUrl, cols, body, used, oldRows, byEmail, nw, chg, gone, risky, vl, backupPath, sig };
 
     // ── 미리보기 ──
     const li = (arr, render) => '<div class="pm-list">' + arr.slice(0, 50).map(render).join('') +
@@ -1082,9 +1092,9 @@ async function pushOpen() {
     H += '<div class="pm-sec">반영 대상</div><div class="pm-meta">' +
       '파일 <b>' + esc(item.name) + '</b> · 시트 <b>' + esc(sheet.name) + '</b> (첫 시트)<br>' +
       '열 <b>' + esc(cols.filter(Boolean).join(' · ')) + '</b>' + (kept.length ? '<br>그대로 두는 열 <b>' + esc(kept.join(' · ')) + '</b> — 지금 값을 메일로 맞춰 옮겨 적습니다' : '') + '<br>' +
-      '마지막 수정 <b>' + esc(String(item.lastModifiedDateTime || '').replace('T', ' ').slice(0, 16)) + '</b>' +
+      '마지막 수정 <b>' + esc(kstOf(item.lastModifiedDateTime)) + '</b> (KST)' +
       ((item.lastModifiedBy && item.lastModifiedBy.user && item.lastModifiedBy.user.displayName) ? ' · <b>' + esc(item.lastModifiedBy.user.displayName) + '</b>' : '') + '<br>' +
-      '백업 <b>' + EMP_BACKUP_DIR + '/employee_search_' + kstStamp() + '.xlsx</b> — 넣기 전에 지금 파일을 그대로 복사해 둡니다</div>';
+      '백업 <b>' + esc(backupPath) + '</b> — 넣기 전에 지금 파일을 그대로 복사해 둡니다</div>';
     if (risky) H += '<div class="pm-box pm-warn" style="margin-top:12px"><label class="pm-chk"><input type="checkbox" id="pm-ack" onchange="document.getElementById(\'pm-go\').disabled=!this.checked"> 빠지는 ' + gone.length + '명을 확인했습니다. 그대로 반영합니다.</label></div>';
 
     _pushBusy = false;
@@ -1119,11 +1129,12 @@ async function pushRun() {
   document.getElementById('pm-cancel').disabled = true;
   document.getElementById('pm-sub').textContent = 'STK-DB 의 명부를 바꾸는 중입니다';
   document.getElementById('pm-note').textContent = '창을 닫지 마세요';
-  let ses = null, backupPath = '';
+  let ses = null, backupPath = '';   // 백업을 실제로 만든 뒤에만 채운다(오류 문구가 거짓말하지 않게)
   const closeSes = async () => { if (ses) { try { await gx('POST', P.wb + '/closeSession', {}, { 'workbook-session-id': ses }); } catch (e) {} ses = null; } };
   try {
     // ④ 백업 — 그 사이 누가 고쳤으면 멈춘다
     pmProg(0, 'act', '바뀐 것이 없는지 확인하는 중…');
+    if (ROWS.map(r => r.EMail).join('|') !== P.sig) throw new Error('미리보기를 띄운 뒤 변환 결과가 바뀌었습니다 — 창을 닫고 「STK-DB 에 반영」 을 다시 눌러 주세요(아무것도 바꾸지 않았습니다)');
     const now = await gx('GET', P.base + '/root:/' + EMP_FILE + '?$select=eTag,lastModifiedDateTime');
     if (now.eTag !== P.item.eTag) throw new Error('그 사이 다른 사람이 이 파일을 고쳤습니다 — 창을 닫고 「STK-DB 에 반영」 을 다시 눌러 주세요(아무것도 바꾸지 않았습니다)');
     pmProg(0, 'act', '지금 파일을 내려받는 중…');
@@ -1133,9 +1144,9 @@ async function pushRun() {
     const bytes = await cur.arrayBuffer();
     if (!bytes.byteLength) throw new Error('내려받은 파일이 비어 있습니다 — 멈춥니다');
     if (!(await _ensureLogFolder(P.drive, EMP_BACKUP_DIR, t0))) throw new Error('백업 폴더(' + EMP_BACKUP_DIR + ')를 만들지 못했습니다');
-    backupPath = EMP_BACKUP_DIR + '/employee_search_' + kstStamp() + '.xlsx';
-    pmProg(0, 'act', backupPath);
-    await gx('PUT', P.base + '/root:/' + backupPath + ':/content', bytes, { 'Content-Type': 'application/octet-stream' });
+    pmProg(0, 'act', P.backupPath);
+    await gx('PUT', P.base + '/root:/' + P.backupPath + ':/content', bytes, { 'Content-Type': 'application/octet-stream' });
+    backupPath = P.backupPath;
 
     // ⑤ 쓰기 — 세션으로 묶어 한 번에 저장되게
     pmProg(1, 'act', '시트를 여는 중…');
