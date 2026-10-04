@@ -191,6 +191,42 @@ tr.warnrow td{background:var(--warn-bg)}
 .fm-f{display:flex;align-items:center;gap:10px;padding:12px 22px 18px;font-size:.72rem;color:var(--mute)}
 .fm-f .sp{flex:1}
 @media(prefers-reduced-motion:reduce){.fs.act .ic::after,.fm-bar.indet i{animation:none}}
+/* STK-DB 에 반영(10-05) — 미리보기 · 진행 · 결과를 한 상자에서 보여 준다 */
+#push-modal{position:fixed;inset:0;z-index:9100;background:rgba(15,39,68,.45);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;padding:16px}
+#push-modal.show{display:flex}
+.pm{background:#fff;border-radius:14px;width:760px;max-width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.25);overflow:hidden}
+.pm-h{display:flex;align-items:center;gap:12px;padding:18px 22px 14px;border-bottom:1px solid var(--line)}
+.pm-b{padding:16px 22px;overflow:auto;flex:1;min-height:0}
+.pm-f{display:flex;align-items:center;gap:10px;padding:12px 22px 16px;border-top:1px solid var(--line);font-size:.72rem;color:var(--mute);flex-wrap:wrap}
+.pm-f .sp{flex:1}
+.pm-grid{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px;flex-wrap:wrap}
+.pm-k{flex:1;min-width:104px;padding:10px 14px;border-right:1px solid var(--line)}
+.pm-k:last-child{border-right:0}
+.pm-k .n{font-size:1.15rem;font-weight:700;line-height:1.2;color:var(--ink)}
+.pm-k .l{font-size:.7rem;color:var(--mute);margin-top:2px}
+.pm-k.add .n{color:var(--ok)}.pm-k.chg .n{color:var(--blue)}.pm-k.del .n{color:var(--bad)}
+.pm-sec{font-size:.78rem;font-weight:700;color:var(--ink);margin:14px 0 6px;display:flex;align-items:center;gap:6px}
+.pm-sec .c{font-weight:400;color:var(--mute);font-size:.72rem}
+.pm-list{border:1px solid var(--line);border-radius:8px;max-height:168px;overflow:auto}
+.pm-row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.3fr);gap:10px;padding:6px 12px;border-bottom:1px solid #f1f3f5;font-size:.75rem;align-items:baseline}
+.pm-row:last-child{border-bottom:0}
+.pm-row .em{color:var(--mute);font-size:.7rem;margin-left:5px}
+.pm-row .d{color:var(--ink2);font-size:.72rem;line-height:1.6}
+.pm-row .d .k{color:var(--mute)}
+.pm-row .d .o{color:#9ca3af;text-decoration:line-through}
+.pm-row .d .w{color:var(--ok);font-weight:600}
+.pm-more{padding:6px 12px;font-size:.72rem;color:var(--mute);background:#fafbfc}
+.pm-box{border-radius:8px;padding:10px 12px;font-size:.75rem;line-height:1.65;margin-bottom:12px}
+.pm-warn{border:1px solid var(--warn-line);background:var(--warn-bg);color:var(--warn)}
+.pm-bad{border:1px solid #f1c0c4;background:var(--bad-bg);color:var(--bad)}
+.pm-ok{border:1px solid #bfe5c2;background:#f1faf1;color:#0b5f0b}
+.pm-meta{font-size:.72rem;color:var(--mute);line-height:1.9}
+.pm-meta b{color:var(--ink2);font-weight:600}
+.pm-chk{display:inline-flex;align-items:center;gap:7px;font-size:.75rem;color:var(--bad);cursor:pointer;font-weight:600}
+.pm-chk input{accent-color:var(--bad);width:14px;height:14px}
+.btn.wr{border-color:#e2c35a;background:#fffdf4;color:#7a5a12}
+.btn.wr:hover{border-color:#c9a53c;background:#fff8e3;color:#6a4e0f}
+@media(max-width:640px){.pm-row{grid-template-columns:1fr}}
 @media(max-width:900px){.steps{grid-template-columns:1fr}.step{min-height:0}}
 @media(max-width:640px){.card{padding:14px}.topbar-in{padding:12px 14px}.wrap,.privacy{padding-left:12px;padding-right:12px}.team{grid-template-columns:1fr 130px}.team .c{display:none}.team select{width:130px}}
 </style>
@@ -315,6 +351,7 @@ tr.warnrow td{background:var(--warn-bg)}
       <label class="tog"><input type="checkbox" id="opt-ext" checked onchange="build()"> 계약직(.ext) 포함</label>
       <span style="flex:1"></span>
       <button class="btn" onclick="compareWithDb()" title="STK-DB 문서 라이브러리의 employee_search.xlsx(지금 APS 가 쓰는 명부)를 읽어 비교"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg> STK-DB 명부와 비교</button>
+      <button class="btn wr" id="btn-push" onclick="pushOpen()" title="이 결과를 STK-DB 의 employee_search.xlsx 첫 시트에 넣습니다 — 넣기 전에 백업을 남기고, 무엇이 바뀌는지 먼저 보여 줍니다"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V3"/><polyline points="7 8 12 3 17 8"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg> STK-DB 에 반영</button>
       <button class="btn" onclick="document.getElementById('cmp-file').click()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> 파일로 비교</button>
       <input type="file" id="cmp-file" accept=".xlsx,.xls" class="hidden" onchange="onCompare(this.files[0]);this.value=''">
       <button class="btn p" id="btn-dl" onclick="download()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Excel 다운로드</button>
@@ -336,6 +373,16 @@ tr.warnrow td{background:var(--warn-bg)}
   </div>
   <pre id="fm-log" class="hidden" style="margin:4px 22px 0;max-height:180px;overflow:auto;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font:11px/1.5 'Segoe UI',sans-serif;color:#374151;white-space:pre-wrap"></pre>
   <div class="fm-f"><span id="fm-note">창을 닫지 마세요</span><span class="sp"></span><button class="btn sm p hidden" id="fm-goflex" onclick="goFlex()">Flex 탭으로</button><button class="btn sm hidden" id="fm-diag" onclick="fmCopyDiag(this)">자세히 복사</button><button class="btn sm" onclick="fmHide()">닫기</button></div>
+</div></div>
+
+<!-- STK-DB 에 반영(10-05) — 미리보기 → 백업 → 쓰기 → 다시 읽어 확인. 되돌릴 수 없는 작업이라 한 단계씩 보여 준다 -->
+<div id="push-modal" role="dialog" aria-modal="true" aria-labelledby="pm-title"><div class="pm">
+  <div class="pm-h"><div class="fm-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V3"/><polyline points="7 8 12 3 17 8"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg></div>
+    <div><div class="fm-t" id="pm-title">STK-DB 에 반영</div><div class="fm-s" id="pm-sub">employee_search.xlsx 를 읽는 중입니다…</div></div></div>
+  <div class="pm-b" id="pm-body"></div>
+  <div class="pm-f"><span id="pm-note"></span><span class="sp"></span>
+    <button class="btn sm" id="pm-cancel" onclick="pushClose()">취소</button>
+    <button class="btn p sm hidden" id="pm-go" onclick="pushRun()">반영</button></div>
 </div></div>
 
 <script type="text/plain" id="hfs-collector">
@@ -843,6 +890,325 @@ function download() {
   logAction('Excel 내려받기', { file: name, rows: ROWS.length });   // 명부(직원 정보) 반출 — 사람 수만 남긴다
 }
 
+
+/* ══ STK-DB 에 반영(10-05) ══════════════════════════════════════════════
+   이번 결과를 STK-DB 문서 루트의 employee_search.xlsx 「첫 시트」 에 그대로 넣는다.
+   APS 전 시스템이 이 파일의 첫 시트만 읽으므로(wb.SheetNames[0]) 대상도 첫 시트다.
+
+   파일을 통째로 다시 만들지 않는다. Graph 의 Excel(workbook) API 로 그 시트의 칸만 고친다 —
+   그래야 2번째 시트(vlookup, employee_search 를 가리키는 수식)와 서식 · 열 너비 · 틀 고정이
+   손대지 않은 채로 남는다. SheetJS 로 다시 쓰면 이것들이 통째로 날아간다.
+
+   순서
+     ① 미리 읽기 — 파일 정보(eTag · 마지막 수정자) · 첫 시트 · 지금 들어 있는 값
+     ② 가드     — 확인 필요 · 사람 수 · 메일 중복 · 빈칸 · 명부 모양인지
+     ③ 미리보기 — 신규 · 바뀜 · 빠짐을 모두 보여 주고 사람이 「반영」 을 누를 때만 다음으로
+     ④ 백업     — 지금 파일을 Backup/employee_search/ 아래에 날짜 이름으로 그대로 복사
+     ⑤ 쓰기     — 머리글 + 본문을 한 번에, 남은 아래 행은 지운다(세션으로 묶어서)
+     ⑥ 확인     — APS 가 읽는 방식 그대로(SheetJS) 다시 내려받아 사람 수 · 메일을 대조
+   되돌리기: Backup 폴더의 파일을 employee_search.xlsx 로 덮어쓰면 된다.
+
+   열 다루기
+     · HFS 가 값을 정하는 열(EMP_OWNED)만 덮어쓴다.
+     · 파일에만 있는 열(WMC_old 등 사람이 따로 적어 둔 열)은 메일을 맞춰 그대로 옮겨 적는다.
+     · 파일에 없는 필수 열은 맨 뒤에 더한다. 열 순서는 파일을 따른다(사람이 보던 순서 유지). */
+const EMP_FILE = 'employee_search.xlsx';
+const EMP_BACKUP_DIR = 'Backup/employee_search';
+const EMP_OWNED = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'Boss', 'Boss of Boss'];  // HFS 가 값을 정하는 열
+const EMP_KEYCOLS = ['EMail', 'EngName'];      // 이 둘이 머리글에 없으면 명부 파일이 아니라고 본다
+const EMP_MIN_ROWS = 10;                        // 이보다 적으면 잘못 읽은 것으로 보고 멈춘다
+let _push = null;      // 미리 읽어 둔 것 { drive, item, wb, sheet, cols, body, used, diff, risky }
+let _pushBusy = false;
+
+function colLetter(n) { let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - r - 1) / 26; } return s; }
+function kstStamp() {
+  const d = new Date(Date.now() + 9 * 3600e3), p = n => String(n).padStart(2, '0');
+  return d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + '-' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + p(d.getUTCSeconds());
+}
+// Graph 호출 하나. 실패하면 서버가 준 설명을 그대로 얹어 던진다(무슨 일인지 화면에 보이게).
+async function gx(method, url, body, extra) {
+  const t = await token(); if (!t) throw new Error('로그인이 풀렸습니다 — 새로고침 후 다시 해 주세요');
+  const hd = Object.assign({ Authorization: 'Bearer ' + t }, extra || {});
+  const isBuf = body instanceof ArrayBuffer;
+  if (body != null && !isBuf && !hd['Content-Type']) hd['Content-Type'] = 'application/json';
+  const res = await fetch(url, { method, headers: hd, cache: 'no-store', body: body == null ? undefined : (isBuf ? body : JSON.stringify(body)) });
+  if (!res.ok) {
+    let d = ''; try { const j = await res.json(); d = (j && j.error && (j.error.message || j.error.code)) || ''; } catch (e) {}
+    throw new Error('HTTP ' + res.status + (d ? ' · ' + d : ''));
+  }
+  if (res.status === 204) return null;
+  const ct = res.headers.get('content-type') || '';
+  return ct.indexOf('json') >= 0 ? res.json() : res;
+}
+
+/* 2번째 시트가 「첫 시트를 그대로 비추는 거울」(vlookup) 인지 알아본다.
+   STK-DB 의 employee_search.xlsx 가 그렇다 — A열 =employee_search!E2(EMail) · B열 =employee_search!D2(EngName).
+   첫 시트에서 줄을 지우면 그 자리가 #REF! 로 깨지고, 사람이 늘면 끝부분이 비어 버린다.
+   그래서 반영한 뒤 같은 사람 수만큼 수식을 다시 깔아 준다. 모양이 조금이라도 다르면 손대지 않는다(null). */
+async function vlookupProbe(wbUrl, first, list) {
+  if (list.length < 2) return null;
+  try {
+    const s = list[1];
+    const url = wbUrl + '/worksheets/' + encodeURIComponent(s.id);
+    const u = await gx('GET', url + '/usedRange?$select=address,rowCount,columnCount,values,formulas,text');
+    if (!u || u.columnCount !== 2) return null;
+    const hv = ((u.values || [])[0] || []).map(x => String(x == null ? '' : x).trim());
+    if (hv[0] !== 'EMail' || hv[1] !== 'EngName') return null;
+    const f = ((u.formulas || [])[1] || []).map(x => String(x == null ? '' : x));
+    const pat = new RegExp("^=\\s*'?" + first.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'?\\s*!", 'i');
+    if (f.length !== 2 || !pat.test(f[0]) || !pat.test(f[1])) return null;   // 수식 거울이 아니면 그대로 둔다
+    const refErr = (u.text || []).reduce((a, r) => a + (r || []).filter(c => /#REF!/.test(String(c == null ? '' : c))).length, 0);
+    return { sheet: s, url, rowCount: u.rowCount || 0, refErr, ref: first.name };
+  } catch (e) { return null; }
+}
+/* 거울 시트를 첫 시트의 지금 내용에 맞춰 다시 깐다 — 값이 아니라 수식을 넣어 예전 방식 그대로 둔다 */
+async function vlookupRepair(P, SH) {
+  const V = P.vl;
+  const eC = colLetter(P.cols.indexOf('EMail') + 1), nC = colLetter(P.cols.indexOf('EngName') + 1);
+  const ref = /^[A-Za-z0-9_]+$/.test(V.ref) ? V.ref : "'" + V.ref.replace(/'/g, "''") + "'";
+  const rows = [['EMail', 'EngName']];
+  for (let i = 0; i < P.body.length; i++) rows.push(['=' + ref + '!' + eC + (i + 2), '=' + ref + '!' + nC + (i + 2)]);
+  for (let i = 0; i < rows.length; i += 200) {
+    const ck = rows.slice(i, i + 200);
+    await gx('PATCH', V.url + "/range(address='A" + (i + 1) + ':B' + (i + ck.length) + "')", { formulas: ck }, SH);
+  }
+  if (V.rowCount > rows.length) await gx('POST', V.url + "/range(address='A" + (rows.length + 1) + ':B' + V.rowCount + "')/clear", { applyTo: 'contents' }, SH);
+  return { rows: rows.length - 1, cleared: Math.max(0, V.rowCount - rows.length), emailCol: eC, nameCol: nC };
+}
+
+function pmShow() { document.getElementById('push-modal').classList.add('show'); }
+function pushClose() { if (_pushBusy) return; document.getElementById('push-modal').classList.remove('show'); }
+function pmSet(sub, html, note, goText) {
+  document.getElementById('pm-sub').textContent = sub;
+  document.getElementById('pm-body').innerHTML = html;
+  document.getElementById('pm-note').textContent = note || '';
+  const go = document.getElementById('pm-go');
+  if (goText) { go.classList.remove('hidden'); go.textContent = goText; go.disabled = false; } else go.classList.add('hidden');
+}
+function pmStop(html) { _pushBusy = false; pmSet('반영할 수 없습니다', html, '', null); document.getElementById('pm-cancel').textContent = '닫기'; }
+
+/* ① + ② + ③ — 읽고, 따져 보고, 미리 보여 준다 */
+async function pushOpen() {
+  if (_pushBusy) return;
+  if (!ROWS.length) { alert('먼저 Flex 구성원을 가져와 주세요.'); return; }
+  _push = null; _pushBusy = true;
+  document.getElementById('pm-cancel').textContent = '취소';
+  pmSet('employee_search.xlsx 를 읽는 중입니다…', '<div class="pm-meta">STK-DB 에서 지금 쓰고 있는 명부를 먼저 읽습니다.</div>', '창을 닫지 마세요', null);
+  pmShow();
+  try {
+    const drive = await _getLogDriveId(); if (!drive) throw new Error('STK-DB 드라이브를 찾지 못했습니다');
+    const base = GRAPH + '/drives/' + drive;
+    const item = await gx('GET', base + '/root:/' + EMP_FILE + '?$select=id,name,size,eTag,lastModifiedDateTime,lastModifiedBy');
+    const wb = base + '/items/' + item.id + '/workbook';
+    const shs = await gx('GET', wb + '/worksheets?$select=id,name,position,visibility');
+    const list = (shs.value || []).slice().sort((a, b) => (a.position || 0) - (b.position || 0));
+    if (!list.length) throw new Error('시트를 하나도 찾지 못했습니다');
+    const sheet = list[0];                       // APS 가 읽는 것도 첫 시트다
+    const sUrl = wb + '/worksheets/' + encodeURIComponent(sheet.id);
+    const used = await gx('GET', sUrl + '/usedRange(valuesOnly=true)?$select=address,rowCount,columnCount,values');
+    const vl = await vlookupProbe(wb, sheet, list);   // 2번째 「거울」 시트(vlookup)가 있으면 알아 둔다
+    const vals = (used && used.values) || [];
+    const headers = (vals[0] || []).map(x => String(x == null ? '' : x).trim());
+    const oldRows = vals.slice(1).map(r => { const o = {}; headers.forEach((hd, i) => { o[hd] = r[i] == null ? '' : r[i]; }); return o; })
+      .filter(o => String(o.EMail || o.email || '').trim());
+
+    // ── 가드 ──
+    const stop = [];
+    const miss = EMP_KEYCOLS.filter(c => headers.indexOf(c) < 0);
+    if (miss.length) stop.push('지금 파일의 첫 시트(<b>' + esc(sheet.name) + '</b>)에 <b>' + esc(miss.join(' · ')) + '</b> 열이 없습니다 — 명부 파일이 맞는지 확인해 주세요.');
+    const warnRows = ROWS.filter(r => r._warn);
+    if (warnRows.length) stop.push('「확인 필요」 가 <b>' + warnRows.length + '건</b> 남아 있습니다 (매핑 없음 · 팀장 없음). 2번 카드에서 본부를 지정한 뒤 다시 눌러 주세요.');
+    if (ROWS.length < EMP_MIN_ROWS) stop.push('넣을 사람이 <b>' + ROWS.length + '명</b> 뿐입니다 — 잘못 읽은 것으로 보고 멈춥니다.');
+    const seen = {}, dup = [];
+    ROWS.forEach(r => { const e = String(r.EMail || '').toLowerCase(); if (seen[e]) { if (dup.indexOf(e) < 0) dup.push(e); } seen[e] = 1; });
+    if (dup.length) stop.push('메일이 겹치는 사람이 있습니다: <b>' + esc(dup.slice(0, 5).join(', ')) + '</b>' + (dup.length > 5 ? ' 외 ' + (dup.length - 5) + '건' : ''));
+    const blank = ROWS.filter(r => !String(r.EMail || '').trim() || !String(r.EngName || '').trim());
+    if (blank.length) stop.push('메일이나 EngName 이 빈 줄이 <b>' + blank.length + '건</b> 있습니다 — 그 사람은 APS 에서 통째로 빠집니다.');
+    if (stop.length) { pmStop('<div class="pm-box pm-bad">' + stop.map(s => '• ' + s).join('<br>') + '</div>'); return; }
+
+    // ── 합치기 — 파일의 열 순서를 따르고, 우리가 모르는 열은 메일을 맞춰 그대로 옮긴다 ──
+    const byEmail = {}; oldRows.forEach(r => { const e = String(r.EMail || r.email || '').trim().toLowerCase(); if (e) byEmail[e] = r; });
+    const cols = headers.slice();
+    const added = EMP_OWNED.filter(c => cols.indexOf(c) < 0);
+    added.forEach(c => cols.push(c));
+    const kept = cols.filter(c => c && EMP_OWNED.indexOf(c) < 0);
+    const body = ROWS.map(r => { const o = byEmail[String(r.EMail).toLowerCase()];
+      return cols.map(c => EMP_OWNED.indexOf(c) >= 0 ? (r[c] == null ? '' : r[c]) : (o && o[c] != null ? o[c] : '')); });
+
+    // ── 무엇이 달라지는지 ──
+    const DIFFC = ['Company', 'Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'];
+    const nw = ROWS.filter(r => !byEmail[r.EMail]);
+    const chg = [];
+    ROWS.forEach(r => { const o = byEmail[r.EMail]; if (!o) return;
+      const d = DIFFC.filter(c => cols.indexOf(c) >= 0 && String(o[c] == null ? '' : o[c]).trim() !== String(r[c] == null ? '' : r[c]).trim());
+      if (d.length) chg.push({ r, o, d }); });
+    const gone = oldRows.filter(o => !ROWS.some(r => r.EMail === String(o.EMail || o.email || '').trim().toLowerCase()));
+
+    // 사람이 많이 빠지면 한 번 더 묻는다(휴직 · 계약직 체크를 끈 채로 누른 경우가 대부분이다)
+    const offLoa = !document.getElementById('opt-loa').checked, offExt = !document.getElementById('opt-ext').checked;
+    const risky = gone.length > 5 || (oldRows.length && gone.length > oldRows.length * 0.2) || offLoa || offExt;
+    _push = { drive, base, item, wb, sheet, sUrl, cols, body, used, oldRows, byEmail, nw, chg, gone, risky, vl };
+
+    // ── 미리보기 ──
+    const li = (arr, render) => '<div class="pm-list">' + arr.slice(0, 50).map(render).join('') +
+      (arr.length > 50 ? '<div class="pm-more">… 외 ' + (arr.length - 50) + '명 (표에서 모두 볼 수 있습니다)</div>' : '') + '</div>';
+    let H = '';
+    H += '<div class="pm-grid">' +
+      '<div class="pm-k"><div class="n">' + oldRows.length + ' → ' + ROWS.length + '</div><div class="l">명부 인원</div></div>' +
+      '<div class="pm-k add"><div class="n">' + nw.length + '</div><div class="l">신규</div></div>' +
+      '<div class="pm-k chg"><div class="n">' + chg.length + '</div><div class="l">바뀜</div></div>' +
+      '<div class="pm-k del"><div class="n">' + gone.length + '</div><div class="l">빠짐(삭제)</div></div></div>';
+    if (offLoa || offExt) H += '<div class="pm-box pm-warn"><b>지금 결과에서 빠져 있는 사람이 있습니다.</b><br>' +
+      (offLoa ? '· 「휴직자 포함」 이 꺼져 있습니다 — 휴직자는 명부에서 <b>지워집니다</b>.<br>' : '') +
+      (offExt ? '· 「계약직(.ext) 포함」 이 꺼져 있습니다 — 계약직은 명부에서 <b>지워집니다</b>.<br>' : '') +
+      'APS 는 이 명부에 없는 사람을 결재자로 찾지 못합니다. 그대로 두려면 취소하고 체크를 켜 주세요.</div>';
+    else if (gone.length) H += '<div class="pm-box pm-warn"><b>' + gone.length + '명이 명부에서 지워집니다.</b> 아래 「빠짐」 목록을 확인해 주세요 — 퇴사자가 맞는지, Flex 수집이 중간에 끊긴 것은 아닌지.</div>';
+    if (added.length) H += '<div class="pm-box pm-warn">지금 파일에 없는 열을 맨 뒤에 더합니다: <b>' + esc(added.join(' · ')) + '</b></div>';
+    if (sheet.name !== 'employee_search') H += '<div class="pm-box pm-warn">첫 시트 이름이 <b>' + esc(sheet.name) + '</b> 입니다. APS 는 이름과 상관없이 첫 시트를 읽으므로 여기에 넣습니다.</div>';
+    const others = list.slice(1).filter(s => !vl || s.id !== vl.sheet.id);
+    if (others.length) H += '<div class="pm-box pm-ok">다른 시트 ' + others.length + '개(' + esc(others.map(s => s.name).join(' · ')) + ')는 손대지 않습니다 — 칸 단위로만 고치기 때문에 수식 · 서식이 그대로 남습니다.</div>';
+    if (vl) H += '<div class="pm-box pm-warn"><label class="pm-chk" style="color:var(--warn)"><input type="checkbox" id="pm-vl" checked> 2번째 시트 「<b>' + esc(vl.sheet.name) + '</b>」 의 수식도 ' + ROWS.length + '명에 맞춰 다시 채웁니다</label><br>' +
+      '이 시트는 첫 시트를 그대로 비추는 거울입니다(<code>=' + esc(vl.ref) + '!' + vl.emailCol + '2</code> 꼴). APS 는 읽지 않고, Excel 에서 사람이 찾아볼 때만 씁니다 — 끄면 그대로 둡니다.<br>' +
+      '지금 <b>' + Math.max(0, vl.rowCount - 1) + '줄</b>' + (vl.refErr ? ' · <b>#REF! ' + vl.refErr + '칸</b> — 첫 시트에서 줄을 지웠을 때 깨진 자리입니다. 다시 채우면 함께 고쳐집니다.' : '') + '</div>';
+
+    if (nw.length) H += '<div class="pm-sec">신규 <span class="c">' + nw.length + '명</span></div>' +
+      li(nw, r => '<div class="pm-row"><span>' + esc(r.EngName) + '<span class="em">' + esc(r.EMail) + '</span></span><span class="d">' + esc(r.Department) + ' · ' + esc(r.Team) + ' · Boss ' + esc(r.Boss) + '</span></div>');
+    if (chg.length) H += '<div class="pm-sec">바뀜 <span class="c">' + chg.length + '명</span></div>' +
+      li(chg, x => '<div class="pm-row"><span>' + esc(x.r.EngName) + '<span class="em">' + esc(x.r.EMail) + '</span></span><span class="d">' +
+        x.d.map(c => '<span class="k">' + esc(c) + '</span> <span class="o">' + esc(String(x.o[c] || '(빈칸)')) + '</span> → <span class="w">' + esc(String(x.r[c] || '(빈칸)')) + '</span>').join('<br>') + '</span></div>');
+    if (gone.length) H += '<div class="pm-sec">빠짐 — 명부에서 지워집니다 <span class="c">' + gone.length + '명</span></div>' +
+      li(gone, o => '<div class="pm-row"><span>' + esc(o.EngName || '') + '<span class="em">' + esc(o.EMail || o.email || '') + '</span></span><span class="d">' + esc(String(o.Department || '')) + ' · ' + esc(String(o.Team || '')) + '</span></div>');
+
+    H += '<div class="pm-sec">반영 대상</div><div class="pm-meta">' +
+      '파일 <b>' + esc(item.name) + '</b> · 시트 <b>' + esc(sheet.name) + '</b> (첫 시트)<br>' +
+      '열 <b>' + esc(cols.filter(Boolean).join(' · ')) + '</b>' + (kept.length ? '<br>그대로 두는 열 <b>' + esc(kept.join(' · ')) + '</b> — 지금 값을 메일로 맞춰 옮겨 적습니다' : '') + '<br>' +
+      '마지막 수정 <b>' + esc(String(item.lastModifiedDateTime || '').replace('T', ' ').slice(0, 16)) + '</b>' +
+      ((item.lastModifiedBy && item.lastModifiedBy.user && item.lastModifiedBy.user.displayName) ? ' · <b>' + esc(item.lastModifiedBy.user.displayName) + '</b>' : '') + '<br>' +
+      '백업 <b>' + EMP_BACKUP_DIR + '/employee_search_' + kstStamp() + '.xlsx</b> — 넣기 전에 지금 파일을 그대로 복사해 둡니다</div>';
+    if (risky) H += '<div class="pm-box pm-warn" style="margin-top:12px"><label class="pm-chk"><input type="checkbox" id="pm-ack" onchange="document.getElementById(\'pm-go\').disabled=!this.checked"> 빠지는 ' + gone.length + '명을 확인했습니다. 그대로 반영합니다.</label></div>';
+
+    _pushBusy = false;
+    pmSet('아래 내용대로 STK-DB 의 명부를 바꿉니다', H, '되돌리려면 Backup 폴더의 파일을 덮어쓰면 됩니다', '반영');
+    if (risky) document.getElementById('pm-go').disabled = true;
+  } catch (e) {
+    pmStop('<div class="pm-box pm-bad">명부를 읽지 못했습니다 — <b>' + esc(e.message) + '</b><br>' +
+      '권한(Files.ReadWrite.All) 이나 파일 위치를 확인해 주세요. 아무것도 바꾸지 않았습니다.</div>');
+  }
+}
+
+/* ④ + ⑤ + ⑥ — 백업하고, 넣고, 다시 읽어 확인한다 */
+let PM_STEPS = [['백업', '지금 파일을 Backup 폴더로 복사'], ['쓰기', '첫 시트의 칸만 고침'], ['확인', 'APS 가 읽는 방식으로 다시 읽어 대조']];
+function pmProg(i, state, sub) {
+  const html = PM_STEPS.map(([t, d], n) => {
+    const cls = n < i ? 'done' : n === i ? (state === 'bad' ? 'bad' : 'act') : '';
+    return '<div class="fs ' + cls + '"><span class="ic">' + (n < i ? '✓' : n + 1) + '</span><div class="tx">' + t +
+      '<div class="sub">' + esc(n === i && sub ? sub : d) + '</div></div></div>';
+  }).join('');
+  document.getElementById('pm-body').innerHTML = '<div class="fm-steps" style="padding:0">' + html + '<div class="fm-bar indet"><i></i></div></div>';
+}
+async function pushRun() {
+  if (!_push || _pushBusy) return;
+  const P = _push;
+  const doVl = !!(P.vl && document.getElementById('pm-vl') && document.getElementById('pm-vl').checked);   // 화면이 바뀌기 전에 체크 상태를 챙긴다
+  PM_STEPS = [['백업', '지금 파일을 Backup 폴더로 복사'], ['쓰기', '첫 시트의 칸만 고침']]
+    .concat(doVl ? [['거울 시트', P.vl.sheet.name + ' 의 수식을 다시 깔기']] : [])
+    .concat([['확인', 'APS 가 읽는 방식으로 다시 읽어 대조']]);
+  let vlDone = null;
+  _pushBusy = true;
+  document.getElementById('pm-go').classList.add('hidden');
+  document.getElementById('pm-cancel').disabled = true;
+  document.getElementById('pm-sub').textContent = 'STK-DB 의 명부를 바꾸는 중입니다';
+  document.getElementById('pm-note').textContent = '창을 닫지 마세요';
+  let ses = null, backupPath = '';
+  const closeSes = async () => { if (ses) { try { await gx('POST', P.wb + '/closeSession', {}, { 'workbook-session-id': ses }); } catch (e) {} ses = null; } };
+  try {
+    // ④ 백업 — 그 사이 누가 고쳤으면 멈춘다
+    pmProg(0, 'act', '바뀐 것이 없는지 확인하는 중…');
+    const now = await gx('GET', P.base + '/root:/' + EMP_FILE + '?$select=eTag,lastModifiedDateTime');
+    if (now.eTag !== P.item.eTag) throw new Error('그 사이 다른 사람이 이 파일을 고쳤습니다 — 창을 닫고 「STK-DB 에 반영」 을 다시 눌러 주세요(아무것도 바꾸지 않았습니다)');
+    pmProg(0, 'act', '지금 파일을 내려받는 중…');
+    const t0 = await token();
+    const cur = await fetch(P.base + '/root:/' + EMP_FILE + ':/content', { headers: { Authorization: 'Bearer ' + t0 }, cache: 'no-store' });
+    if (!cur.ok) throw new Error('백업용으로 내려받지 못했습니다 (HTTP ' + cur.status + ')');
+    const bytes = await cur.arrayBuffer();
+    if (!bytes.byteLength) throw new Error('내려받은 파일이 비어 있습니다 — 멈춥니다');
+    if (!(await _ensureLogFolder(P.drive, EMP_BACKUP_DIR, t0))) throw new Error('백업 폴더(' + EMP_BACKUP_DIR + ')를 만들지 못했습니다');
+    backupPath = EMP_BACKUP_DIR + '/employee_search_' + kstStamp() + '.xlsx';
+    pmProg(0, 'act', backupPath);
+    await gx('PUT', P.base + '/root:/' + backupPath + ':/content', bytes, { 'Content-Type': 'application/octet-stream' });
+
+    // ⑤ 쓰기 — 세션으로 묶어 한 번에 저장되게
+    pmProg(1, 'act', '시트를 여는 중…');
+    try { const s = await gx('POST', P.wb + '/createSession', { persistChanges: true }); ses = s && s.id; } catch (e) { ses = null; }   // 세션이 안 되면 세션 없이 간다
+    const SH = ses ? { 'workbook-session-id': ses } : {};
+    const all = [P.cols, ...P.body];
+    const last = colLetter(P.cols.length);
+    for (let i = 0; i < all.length; i += 200) {
+      const ck = all.slice(i, i + 200);
+      pmProg(1, 'act', (i + ck.length) + ' / ' + all.length + ' 줄');
+      await gx('PATCH', P.sUrl + "/range(address='A" + (i + 1) + ':' + last + (i + ck.length) + "')", { values: ck }, SH);
+    }
+    const oldLast = (P.used && P.used.rowCount) || 0;
+    if (oldLast > all.length) {           // 줄어든 만큼 아래에 남은 옛 줄을 지운다
+      pmProg(1, 'act', '남은 ' + (oldLast - all.length) + '줄을 비우는 중…');
+      await gx('POST', P.sUrl + "/range(address='A" + (all.length + 1) + ':' + last + oldLast + "')/clear", { applyTo: 'contents' }, SH);
+    }
+    // ⑤-2 거울 시트 — 첫 시트와 같은 줄 수로 수식을 다시 깐다(선택)
+    if (doVl) {
+      pmProg(2, 'act', P.vl.sheet.name + ' 에 수식을 다시 까는 중…');
+      try { vlDone = await vlookupRepair(P, SH); }
+      catch (e) { vlDone = { err: e.message }; }   // 거울은 APS 가 읽지 않으므로 실패해도 본 작업은 끝낸다
+    }
+    await closeSes();
+
+    // ⑥ 확인 — APS 가 읽는 그대로(SheetJS · 첫 시트) 다시 읽어 대조한다
+    pmProg(PM_STEPS.length - 1, 'act', '다시 내려받아 대조하는 중…');
+    const t1 = await token();
+    const vr = await fetch(P.base + '/root:/' + EMP_FILE + ':/content', { headers: { Authorization: 'Bearer ' + t1 }, cache: 'no-store' });
+    if (!vr.ok) throw new Error('확인용으로 다시 읽지 못했습니다 (HTTP ' + vr.status + ') — 반영 자체는 끝났습니다');
+    const vbuf = await vr.arrayBuffer();
+    const vwb = XLSX.read(vbuf, { type: 'array' });
+    const vrows = XLSX.utils.sheet_to_json(vwb.Sheets[vwb.SheetNames[0]], { defval: '' });
+    const got = new Set(vrows.map(r => String(r.EMail || r.email || '').trim().toLowerCase()).filter(Boolean));
+    const missNow = ROWS.filter(r => !got.has(r.EMail)).map(r => r.EMail);
+    const extraNow = [...got].filter(e => !ROWS.some(r => r.EMail === e));
+    const sheetsLeft = vwb.SheetNames.length;
+
+    logAction('STK-DB 반영', { file: EMP_FILE, sheet: P.sheet.name, rows: ROWS.length,
+      added: P.nw.length, changed: P.chg.length, removed: P.gone.length, backup: backupPath,
+      mirror: vlDone ? (vlDone.err ? '실패: ' + vlDone.err : P.vl.sheet.name + ' ' + vlDone.rows + '줄') : '건드리지 않음' });
+
+    _pushBusy = false;
+    document.getElementById('pm-cancel').disabled = false;
+    document.getElementById('pm-cancel').textContent = '닫기';
+    document.getElementById('pm-note').textContent = '';
+    const bad = missNow.length || extraNow.length;
+    document.getElementById('pm-sub').textContent = bad ? '반영했지만 대조에서 어긋난 것이 있습니다' : '반영을 마쳤습니다';
+    document.getElementById('pm-body').innerHTML =
+      '<div class="pm-box ' + (bad ? 'pm-warn' : 'pm-ok') + '"><b>' + (bad ? '확인이 필요합니다.' : 'employee_search.xlsx 에 ' + ROWS.length + '명을 넣었습니다.') + '</b><br>' +
+      '신규 ' + P.nw.length + ' · 바뀜 ' + P.chg.length + ' · 빠짐 ' + P.gone.length + ' · 지금 파일에서 다시 읽은 인원 ' + got.size + '명 · 시트 ' + sheetsLeft + '개' +
+      (bad ? '<br>안 들어간 사람 ' + missNow.length + '명' + (missNow.length ? '(' + esc(missNow.slice(0, 5).join(', ')) + ')' : '') +
+        ' · 남아 있는 사람 ' + extraNow.length + '명' + (extraNow.length ? '(' + esc(extraNow.slice(0, 5).join(', ')) + ')' : '') +
+        '<br>Backup 폴더의 <b>' + esc(backupPath) + '</b> 로 되돌릴 수 있습니다.' : '') + '</div>' +
+      (vlDone ? '<div class="pm-box ' + (vlDone.err ? 'pm-warn' : 'pm-ok') + '">거울 시트 <b>' + esc(P.vl.sheet.name) + '</b> — ' +
+        (vlDone.err ? '다시 깔지 못했습니다(' + esc(vlDone.err) + '). 첫 시트 반영은 끝났고, 이 시트는 APS 가 읽지 않습니다.'
+          : vlDone.rows + '줄을 <code>=' + esc(P.vl.ref) + '!' + vlDone.emailCol + '/' + vlDone.nameCol + '</code> 수식으로 다시 깔았습니다' +
+            (vlDone.cleared ? ' · 남은 ' + vlDone.cleared + '줄은 비웠습니다' : '') + (P.vl.refErr ? ' · #REF! ' + P.vl.refErr + '칸도 함께 풀렸습니다' : '')) + '</div>' : '') +
+      '<div class="pm-meta">백업 <b>' + esc(backupPath) + '</b><br>APS · GW · IT · ACC 등은 다음에 화면을 열 때(또는 새로고침할 때) 바뀐 명부를 읽습니다.</div>';
+    try { applyCompare('STK-DB employee_search.xlsx (반영 직후)', vbuf); } catch (e) {}
+  } catch (e) {
+    await closeSes();
+    _pushBusy = false;
+    document.getElementById('pm-cancel').disabled = false;
+    document.getElementById('pm-cancel').textContent = '닫기';
+    document.getElementById('pm-note').textContent = '';
+    document.getElementById('pm-sub').textContent = '반영하지 못했습니다';
+    document.getElementById('pm-body').innerHTML = '<div class="pm-box pm-bad"><b>' + esc(e.message) + '</b><br>' +
+      (backupPath ? '백업은 <b>' + esc(backupPath) + '</b> 에 남아 있습니다. 파일이 어중간하게 바뀌었다면 이 백업으로 되돌려 주세요.' :
+        '백업 전에 멈췄으므로 명부는 그대로입니다.') + '</div>';
+    logAction('STK-DB 반영 실패', { file: EMP_FILE, reason: String(e.message).slice(0, 200), backup: backupPath });
+  }
+}
 
 /* ── 로그인 · 권한 · 이력 (10-01) ──────────────────────────
    · 로그인: 다른 APS 시스템과 같은 Entra 앱(APS-MasterData-App) · MSAL 리다이렉트. 이 페이지의 주소(origin + pathname)가

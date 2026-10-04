@@ -11,3 +11,11 @@ Flex 구성원 화면의 `search-users` 응답(JSON 또는 HAR)을 APS 공통 �
   첫 페이지부터 끝까지 다시 읽어 HFS 창으로 보낸다(postMessage · flex.team origin 만 받음 · 서버 없음). 다시 읽기가 안 되면 화면을 끝까지 내리며 응답을 모은다.
   수집 코드는 index.html 의 `<script type="text/plain" id="hfs-collector">` 에 있고 북마크 URL 은 화면에서 만든다.
 - 「STK-DB 현재 명부와 비교」 단추는 STK-DB 의 `employee_search.xlsx` 를 바로 읽어 신규 · 바뀜 · 빠짐을 보여 준다.
+- 「STK-DB 에 반영」 단추(10-05)는 이번 결과를 STK-DB `employee_search.xlsx` 의 **첫 시트**에 넣는다.
+  파일을 다시 만들지 않고 Graph 의 Excel(workbook) API 로 그 시트의 칸만 고치므로, 2번째 `vlookup` 시트의 수식과 서식 · 열 너비가 그대로 남는다.
+  넣기 전에 지금 파일을 `Backup/employee_search/employee_search_YYYYMMDD-HHmmss.xlsx` 로 복사하고, 신규 · 바뀜 · 빠짐을 먼저 보여 준다.
+  되돌리려면 그 백업 파일을 `employee_search.xlsx` 로 덮어쓴다.
+- 첫 시트가 가져야 할 열: `Company` `Department` `Team` `EngName` `EMail` `Boss` `Boss of Boss`
+  (대소문자까지 그대로 — 13개 시스템이 `r['EngName']` 처럼 정확한 이름으로 읽는다).
+  `EMail` · `EngName` 중 하나라도 비면 그 사람은 APS 전체에서 빠진다. `Boss` = 1차(팀장), `Boss of Boss` = 2차(부서장).
+  그 밖의 열(`WMC_old` 등)은 아무 시스템도 읽지 않으며, 반영할 때 메일을 맞춰 기존 값을 그대로 옮겨 적는다.
