@@ -437,7 +437,7 @@ tr.warnrow td{background:var(--warn-bg)}
      · 북마크를 다시 누르면 상주 코드도 그 최신 코드로 바뀐다(귀는 하나만 둔다). */
   var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin, TPL_KEY = 'hfs.collect.tpl.v1';
   if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-  var V = 11;
+  var V = 12;
   var main = async function (ctx) {
   ctx = ctx || {};
   var AUTO = !!ctx.auto, KEY = String(ctx.key || '');
@@ -502,8 +502,14 @@ tr.warnrow td{background:var(--warn-bg)}
     }
     return out;
   };
-  var loadTpl = function () { try { var t = JSON.parse(localStorage.getItem(TPL_KEY) || 'null'); if (!t || !t.url || !t.slot) return null; var h = rebuildHeaders(t.headers || {}); if (!h) return null; return { url: t.url, method: t.method, headers: h, body: t.body, slot: t.slot }; } catch (e) { return null; } };
-  var saveTpl = function (T, slot) { try { localStorage.setItem(TPL_KEY, JSON.stringify({ url: T.url, method: T.method, headers: bindHeaders(T.headers), body: T.body, slot: slot, at: Date.now() })); } catch (e) {} };
+  /* v12: 틀에 「첫 페이지 요청(first)」 을 따로 둘 수 있다 — Flex 처럼 첫 요청에는 continuation 자리가 아예 없고
+     둘째 요청부터 생기는 경우, 첫 페이지는 first 그대로 · 다음 페이지는 둘째 요청 틀에 continuation 을 넣어 보낸다. */
+  var loadTpl = function () { try { var t = JSON.parse(localStorage.getItem(TPL_KEY) || 'null'); if (!t || !t.url || !t.slot) return null; var h = rebuildHeaders(t.headers || {}); if (!h) return null;
+    var f = null; if (t.first) { var fh = rebuildHeaders(t.first.headers || {}); if (!fh) return null; f = { url: t.first.url, method: t.first.method, headers: fh, body: t.first.body }; }
+    return { url: t.url, method: t.method, headers: h, body: t.body, slot: t.slot, first: f }; } catch (e) { return null; } };
+  var saveTpl = function (T, slot) { try { var o = { url: T.url, method: T.method, headers: bindHeaders(T.headers), body: T.body, slot: slot, at: Date.now() };
+    if (T.first) o.first = { url: T.first.url, method: T.first.method, headers: bindHeaders(T.first.headers), body: T.first.body };
+    localStorage.setItem(TPL_KEY, JSON.stringify(o)); } catch (e) {} };
   var dropTpl = function () { try { localStorage.removeItem(TPL_KEY); } catch (e) {} };
   /* ── 틀로 보내기 ── */
   var setPath = function (o, path, v) { var cur = o; for (var i = 0; i < path.length - 1; i++) { if (cur[path[i]] == null || typeof cur[path[i]] !== 'object') cur[path[i]] = {}; cur = cur[path[i]]; } cur[path[path.length - 1]] = v; };
@@ -514,8 +520,12 @@ tr.warnrow td{background:var(--warn-bg)}
     else { if (val == null) delete headers[c.key]; else headers[c.key] = val; }
     return { url: url, headers: headers, body: body };
   };
+  /* 다시 보낼 때 요청 시각 헤더(x-request-time)는 지금 시각으로 바꾼다 — 잡은 값을 그대로 쓰면 서버가 「같은 요청」 으로 보고
+     첫 페이지만 돌려줄 수 있다(10-05 진단에서 짐작한 자리마다 첫 페이지가 온 것도 이 때문일 수 있다). 자릿수(초 · 밀리초)는 잡은 값을 따른다. */
+  var lastRt = 0;   /* 연달아 보내도 같은 시각이 두 번 나가지 않게 — 늘 앞보다 1 이상 크게 */
+  var freshHeaders = function (hd) { var o = Object.assign({}, hd); Object.keys(o).forEach(function (k) { if (/^x-request-time$/i.test(k)) { var v = String(o[k]); if (/^\d{13}$/.test(v)) { lastRt = Math.max(Date.now(), lastRt + 1); o[k] = String(lastRt); } else if (/^\d{10}$/.test(v)) o[k] = String(Math.floor(Date.now() / 1000)); } }); return o; };
   var send = async function (T, q) {
-    var res = await F(q.url, { method: T.method, headers: q.headers, body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
+    var res = await F(q.url, { method: T.method, headers: freshHeaders(q.headers), body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return res.json();
   };
@@ -523,7 +533,7 @@ tr.warnrow td{background:var(--warn-bg)}
     users = new Map(); total = 0;
     var cont = null, pages = 0, prevSize = -1;
     for (var pg = 0; pg < 100; pg++) {
-      var j = add(await send(T, place(T, T.slot, cont))); pages++;
+      var j = (pg === 0 && T.first) ? add(await send(T.first, { url: T.first.url, headers: T.first.headers, body: T.first.body })) : add(await send(T, place(T, T.slot, cont))); pages++;
       log('  p' + pages + ': ' + listOf(j).length + '명 · hasNext ' + (j && j.hasNext) + ' · 누적 ' + users.size);
       prog('read', { count: users.size, total: total, pages: pages });
       if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
@@ -533,6 +543,38 @@ tr.warnrow td{background:var(--warn-bg)}
     log('읽기 ' + pages + '페이지 · ' + users.size + '명' + (total ? ' / ' + total : ''));
     if (!complete()) throw new Error('전체 ' + total + '명 중 ' + users.size + '명만 읽힘');
     return true;
+  };
+  /* ── 자리 배우기(v12) — 10-05 실제 Flex 진단: 첫 요청 본문은 sorts · filter 뿐이라 continuation 을 넣을 자리가 보이지 않았고,
+     짐작한 자리(본문 continuation · query continuation · 토큰 모양 값)는 모두 첫 페이지를 다시 돌려줬다. 다시 보내기 자체는 먹혔다(쿠키 인증).
+     그런데 천천히 내리기로 72명을 다 모을 때는 Flex 앱이 보낸 둘째 · 셋째 요청도 함께 잡힌다. 그 요청 안에서 「앞 응답의 continuation 값과
+     똑같은 값」 이 있는 자리(본문 어느 깊이 · query · 헤더)를 찾으면 이름 · 모양을 몰라도 자리가 정확히 나온다. 그 요청을 다음 페이지 틀로,
+     continuation 이 실리지 않은 요청을 첫 페이지(first)로 저장하고, 끝까지 다시 읽어 확인된 경우에만 저장한다. ── */
+  var learn = function (cs) {
+    var conts = []; cs.forEach(function (x) { var v = x.res && x.res.continuation; if (typeof v === 'string' && v.length >= 6 && conts.indexOf(v) < 0) conts.push(v); });
+    if (!conts.length) return null;
+    var has = function (q) { var s = ''; try { s = (q.url || '') + '\n' + (q.body || '') + '\n' + JSON.stringify(q.headers || {}); } catch (e) {} return conts.some(function (v) { return s.indexOf(v) >= 0 || s.indexOf(encodeURIComponent(v)) >= 0; }); };
+    var first = null; for (var a = 0; a < cs.length && !first; a++) { var q0 = cs[a].req; if (q0 && !has(q0) && cs[a].res && listOf(cs[a].res).length) first = q0; }
+    for (var i = 0; i < cs.length; i++) {
+      var q = cs[i].req; if (!q) continue; var hit = null;
+      for (var k = 0; k < conts.length && !hit; k++) {
+        var v = conts[k];
+        try { new URL(q.url, location.href).searchParams.forEach(function (val, key) { if (!hit && val === v) hit = { kind: 'query', key: key }; }); } catch (e) {}
+        if (!hit && q.body) { try { (function walk(o, path) { if (hit || !o || typeof o !== 'object') return; Object.keys(o).forEach(function (kk) { if (hit) return; var vv = o[kk]; if (vv === v) hit = { kind: 'body', path: path.concat(kk) }; else if (vv && typeof vv === 'object') walk(vv, path.concat(kk)); }); })(JSON.parse(q.body), []); } catch (e) {} }
+        if (!hit) Object.keys(q.headers || {}).forEach(function (hn) { if (!hit && String(q.headers[hn]) === v) hit = { kind: 'header', key: hn }; });
+      }
+      if (hit) return { T: { url: q.url, method: q.method, headers: q.headers, body: q.body, slot: hit, first: first }, slot: hit };
+    }
+    return null;
+  };
+  var slotName = function (s) { return s.kind === 'body' ? '본문 ' + s.path.join('.') : s.kind === 'query' ? 'query ' + s.key : '헤더 ' + s.key; };
+  /* 배운 자리로 끝까지 다시 읽어 보고 맞을 때만 틀로 저장한다. 실패하면 이미 모은 명단으로 되돌린다 */
+  var tryLearn = async function (cs, why) {
+    var L = learn(cs); if (!L) { log('자리 배우기(' + why + '): 다음 페이지 요청에서 continuation 값을 찾지 못함 · 잡힌 요청 ' + cs.length + '건'); return false; }
+    log('자리 배우기(' + why + '): ' + slotName(L.slot) + (L.T.first ? ' · 첫 페이지 요청 따로' : ''));
+    var keepU = users, keepT = total, good = false;
+    try { good = await readAll(L.T); } catch (e) { log('배운 자리로 다시 읽기 실패: ' + e.message); }
+    if (good) { saveTpl(L.T, L.slot); log('틀 저장 — 다음부터는 화면 없이 바로 읽는다'); return true; }
+    users = keepU; total = keepT; return false;
   };
   /* ── 가로채기(fetch · XHR) — 어느 창(window)에든 설치할 수 있다 ── */
   var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
@@ -641,6 +683,7 @@ tr.warnrow td{background:var(--warn-bg)}
     }
     log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 찾음');
     if (slot) { C.slot = slot; try { ok = await readAll(C); saveTpl(C, slot); } catch (e) { keepBest(); log('읽기 실패: ' + e.message); } }
+    if (!ok && caps.length >= 2) ok = await tryLearn(caps, '잡힌 요청');
     if (!ok && !AUTO) {   /* 천천히 끝까지 내리며 모으기(자동일 땐 하지 않는다 — 탭이 보여야 하고 최대 10분 걸린다) — Flex 는 내릴 때마다 다음 20명을 조금씩 늦게 부른다. 새 응답이 올 때까지 기다렸다 다시 내린다 */
       users = new Map(); total = 0; caps.forEach(function (c) { add(c.res); }); liveRes.splice(0);
       hookTab();
@@ -662,6 +705,7 @@ tr.warnrow td{background:var(--warn-bg)}
       lastNext = true; idle = 0;
       }
       log('천천히 내리며 모음: ' + users.size + '명' + (total ? ' / ' + total : '') + ' · 마지막 페이지 ' + (!lastNext) + ' · ' + Math.round((Date.now() - t0) / 1000) + '초');
+      if (complete()) { var gotU = users, gotT = total; await tryLearn(caps, '내리며 잡은 요청'); users = gotU; total = gotT; }   /* 배우기는 틀 저장만 — 보낼 명단은 지금 모은 것 */
       if (best.size > users.size) { users = best; log('앞서 읽은 ' + best.size + '명을 쓴다'); }
     }
     closeFrame();
@@ -1569,7 +1613,8 @@ function renderAuto() {
   else if (_autoCur && _autoCur.phase === 'retry' && !_autoCur.tries) { cls = 'wait'; tcls = 'warn'; text = _autoCur.key + ' 회차 — Flex 탭 연결을 기다리는 중입니다. Flex 구성원 화면에서 「HFS 수집」 을 한 번 눌러 주세요 (예정 시각부터 2시간 안에 연결되면 그때 돕니다)'; }
   else if (_autoCur && _autoCur.phase === 'retry') { cls = 'wait'; tcls = 'warn'; text = _autoCur.key + ' 회차 — ' + (_autoCur.err || '실패') + ' · ' + Math.max(1, Math.ceil((_autoCur.retryAt - now) / 60000)) + '분 뒤 다시 (' + _autoCur.tries + '/' + AUTO_MAX_TRY + '번 시도함)'; }
   else if (!alive) { cls = 'wait'; tcls = 'warn'; text = 'Flex 탭이 연결되지 않았습니다 — Flex 구성원 화면에서 「HFS 수집」 을 한 번 눌러 두면 그다음부터 자동입니다 (Flex 탭은 닫지 마세요)'; }
-  else { cls = 'ok'; text = 'Flex 탭 연결됨 · 수집기 v' + (_flexV || '?') + (_flexTpl ? '' : ' · 저장된 연결 없음(첫 수집이 끝나면 생김)'); }
+  else if (!_flexTpl) { cls = 'wait'; tcls = 'warn'; text = 'Flex 탭 연결됨 · 수집기 v' + (_flexV || '?') + ' — <b>저장된 연결이 아직 없습니다.</b> Flex 탭을 화면에 띄워 둔 채 「HFS 수집」 을 한 번 끝까지 돌려 주세요(72명 다 받을 때까지 Flex 탭에 머물기). 그때 연결이 저장되고, 그다음부터는 탭이 가려져 있어도 08:00 · 20:00 에 바로 읽습니다'; }
+  else { cls = 'ok'; text = 'Flex 탭 연결됨 · 수집기 v' + (_flexV || '?') + ' · 저장된 연결 있음 — 탭이 가려져 있어도 바로 읽습니다'; }
   if (_autoNote && !(_autoCur && _autoCur.phase !== 'retry')) { text = _autoNote.text; tcls = _autoNote.cls; if (_autoNote.cls === 'bad') cls = 'bad'; }
   if (last && _auto.on) {
     const r = last, when = new Date(r.at + 9 * 3600e3).toISOString().slice(5, 16).replace('T', ' ');

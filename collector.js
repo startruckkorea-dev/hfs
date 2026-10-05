@@ -1,7 +1,7 @@
 (async () => {
 var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin, TPL_KEY = 'hfs.collect.tpl.v1';
 if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-var V = 11;
+var V = 12;
 var main = async function (ctx) {
 ctx = ctx || {};
 var AUTO = !!ctx.auto, KEY = String(ctx.key || '');
@@ -65,8 +65,12 @@ out[h] = b.src.prefix + cur + b.src.suffix;
 }
 return out;
 };
-var loadTpl = function () { try { var t = JSON.parse(localStorage.getItem(TPL_KEY) || 'null'); if (!t || !t.url || !t.slot) return null; var h = rebuildHeaders(t.headers || {}); if (!h) return null; return { url: t.url, method: t.method, headers: h, body: t.body, slot: t.slot }; } catch (e) { return null; } };
-var saveTpl = function (T, slot) { try { localStorage.setItem(TPL_KEY, JSON.stringify({ url: T.url, method: T.method, headers: bindHeaders(T.headers), body: T.body, slot: slot, at: Date.now() })); } catch (e) {} };
+var loadTpl = function () { try { var t = JSON.parse(localStorage.getItem(TPL_KEY) || 'null'); if (!t || !t.url || !t.slot) return null; var h = rebuildHeaders(t.headers || {}); if (!h) return null;
+var f = null; if (t.first) { var fh = rebuildHeaders(t.first.headers || {}); if (!fh) return null; f = { url: t.first.url, method: t.first.method, headers: fh, body: t.first.body }; }
+return { url: t.url, method: t.method, headers: h, body: t.body, slot: t.slot, first: f }; } catch (e) { return null; } };
+var saveTpl = function (T, slot) { try { var o = { url: T.url, method: T.method, headers: bindHeaders(T.headers), body: T.body, slot: slot, at: Date.now() };
+if (T.first) o.first = { url: T.first.url, method: T.first.method, headers: bindHeaders(T.first.headers), body: T.first.body };
+localStorage.setItem(TPL_KEY, JSON.stringify(o)); } catch (e) {} };
 var dropTpl = function () { try { localStorage.removeItem(TPL_KEY); } catch (e) {} };
 var setPath = function (o, path, v) { var cur = o; for (var i = 0; i < path.length - 1; i++) { if (cur[path[i]] == null || typeof cur[path[i]] !== 'object') cur[path[i]] = {}; cur = cur[path[i]]; } cur[path[path.length - 1]] = v; };
 var place = function (T, c, val) {
@@ -76,8 +80,10 @@ else if (c.kind === 'query') { var u = new URL(url, location.href); if (val == n
 else { if (val == null) delete headers[c.key]; else headers[c.key] = val; }
 return { url: url, headers: headers, body: body };
 };
+var lastRt = 0;
+var freshHeaders = function (hd) { var o = Object.assign({}, hd); Object.keys(o).forEach(function (k) { if (/^x-request-time$/i.test(k)) { var v = String(o[k]); if (/^\d{13}$/.test(v)) { lastRt = Math.max(Date.now(), lastRt + 1); o[k] = String(lastRt); } else if (/^\d{10}$/.test(v)) o[k] = String(Math.floor(Date.now() / 1000)); } }); return o; };
 var send = async function (T, q) {
-var res = await F(q.url, { method: T.method, headers: q.headers, body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
+var res = await F(q.url, { method: T.method, headers: freshHeaders(q.headers), body: (T.method === 'GET' || T.method === 'HEAD') ? undefined : q.body, credentials: 'include' });
 if (!res.ok) throw new Error('HTTP ' + res.status);
 return res.json();
 };
@@ -85,7 +91,7 @@ var readAll = async function (T) {
 users = new Map(); total = 0;
 var cont = null, pages = 0, prevSize = -1;
 for (var pg = 0; pg < 100; pg++) {
-var j = add(await send(T, place(T, T.slot, cont))); pages++;
+var j = (pg === 0 && T.first) ? add(await send(T.first, { url: T.first.url, headers: T.first.headers, body: T.first.body })) : add(await send(T, place(T, T.slot, cont))); pages++;
 log('  p' + pages + ': ' + listOf(j).length + '명 · hasNext ' + (j && j.hasNext) + ' · 누적 ' + users.size);
 prog('read', { count: users.size, total: total, pages: pages });
 if (!j || !j.hasNext || !j.continuation || j.continuation === cont) break;
@@ -95,6 +101,32 @@ prevSize = users.size; cont = j.continuation;
 log('읽기 ' + pages + '페이지 · ' + users.size + '명' + (total ? ' / ' + total : ''));
 if (!complete()) throw new Error('전체 ' + total + '명 중 ' + users.size + '명만 읽힘');
 return true;
+};
+var learn = function (cs) {
+var conts = []; cs.forEach(function (x) { var v = x.res && x.res.continuation; if (typeof v === 'string' && v.length >= 6 && conts.indexOf(v) < 0) conts.push(v); });
+if (!conts.length) return null;
+var has = function (q) { var s = ''; try { s = (q.url || '') + '\n' + (q.body || '') + '\n' + JSON.stringify(q.headers || {}); } catch (e) {} return conts.some(function (v) { return s.indexOf(v) >= 0 || s.indexOf(encodeURIComponent(v)) >= 0; }); };
+var first = null; for (var a = 0; a < cs.length && !first; a++) { var q0 = cs[a].req; if (q0 && !has(q0) && cs[a].res && listOf(cs[a].res).length) first = q0; }
+for (var i = 0; i < cs.length; i++) {
+var q = cs[i].req; if (!q) continue; var hit = null;
+for (var k = 0; k < conts.length && !hit; k++) {
+var v = conts[k];
+try { new URL(q.url, location.href).searchParams.forEach(function (val, key) { if (!hit && val === v) hit = { kind: 'query', key: key }; }); } catch (e) {}
+if (!hit && q.body) { try { (function walk(o, path) { if (hit || !o || typeof o !== 'object') return; Object.keys(o).forEach(function (kk) { if (hit) return; var vv = o[kk]; if (vv === v) hit = { kind: 'body', path: path.concat(kk) }; else if (vv && typeof vv === 'object') walk(vv, path.concat(kk)); }); })(JSON.parse(q.body), []); } catch (e) {} }
+if (!hit) Object.keys(q.headers || {}).forEach(function (hn) { if (!hit && String(q.headers[hn]) === v) hit = { kind: 'header', key: hn }; });
+}
+if (hit) return { T: { url: q.url, method: q.method, headers: q.headers, body: q.body, slot: hit, first: first }, slot: hit };
+}
+return null;
+};
+var slotName = function (s) { return s.kind === 'body' ? '본문 ' + s.path.join('.') : s.kind === 'query' ? 'query ' + s.key : '헤더 ' + s.key; };
+var tryLearn = async function (cs, why) {
+var L = learn(cs); if (!L) { log('자리 배우기(' + why + '): 다음 페이지 요청에서 continuation 값을 찾지 못함 · 잡힌 요청 ' + cs.length + '건'); return false; }
+log('자리 배우기(' + why + '): ' + slotName(L.slot) + (L.T.first ? ' · 첫 페이지 요청 따로' : ''));
+var keepU = users, keepT = total, good = false;
+try { good = await readAll(L.T); } catch (e) { log('배운 자리로 다시 읽기 실패: ' + e.message); }
+if (good) { saveTpl(L.T, L.slot); log('틀 저장 — 다음부터는 화면 없이 바로 읽는다'); return true; }
+users = keepU; total = keepT; return false;
 };
 var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
 var installHook = function (w, sink) {
@@ -194,6 +226,7 @@ else { probe = await send(C, place(C, c, null)); var em = emailsOf(probe); if (e
 }
 log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 찾음');
 if (slot) { C.slot = slot; try { ok = await readAll(C); saveTpl(C, slot); } catch (e) { keepBest(); log('읽기 실패: ' + e.message); } }
+if (!ok && caps.length >= 2) ok = await tryLearn(caps, '잡힌 요청');
 if (!ok && !AUTO) {
 users = new Map(); total = 0; caps.forEach(function (c) { add(c.res); }); liveRes.splice(0);
 hookTab();
@@ -214,6 +247,7 @@ closeFrame(); var c0 = caps.length; await freshCapture(sink); caps.slice(c0).for
 lastNext = true; idle = 0;
 }
 log('천천히 내리며 모음: ' + users.size + '명' + (total ? ' / ' + total : '') + ' · 마지막 페이지 ' + (!lastNext) + ' · ' + Math.round((Date.now() - t0) / 1000) + '초');
+if (complete()) { var gotU = users, gotT = total; await tryLearn(caps, '내리며 잡은 요청'); users = gotU; total = gotT; }
 if (best.size > users.size) { users = best; log('앞서 읽은 ' + best.size + '명을 쓴다'); }
 }
 closeFrame();
