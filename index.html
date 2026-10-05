@@ -227,6 +227,28 @@ tr.warnrow td{background:var(--warn-bg)}
 .btn.wr{border-color:#e2c35a;background:#fffdf4;color:#7a5a12}
 .btn.wr:hover{border-color:#c9a53c;background:#fff8e3;color:#6a4e0f}
 @media(max-width:640px){.pm-row{grid-template-columns:1fr}}
+/* 자동 수집 막대(10-05) — 1번 카드 맨 위. 점 색: 초록 연결 · 노랑 대기/보류 · 빨강 실패 · 회색 꺼짐 */
+.auto-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:-2px 0 14px;background:#fbfcfe}
+.auto-bar .ab-l{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 320px}
+.ab-dot{width:10px;height:10px;border-radius:50%;background:#c3c8d0;flex:none;box-shadow:0 0 0 3px rgba(195,200,208,.25)}
+.ab-dot.ok{background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.18)}
+.ab-dot.wait{background:#d9a300;box-shadow:0 0 0 3px rgba(217,163,0,.2)}
+.ab-dot.bad{background:#c42b1c;box-shadow:0 0 0 3px rgba(196,43,28,.18)}
+.ab-dot.run{background:var(--blue);box-shadow:0 0 0 3px rgba(0,120,212,.2);animation:abpulse 1.2s ease-in-out infinite}
+@keyframes abpulse{50%{box-shadow:0 0 0 6px rgba(0,120,212,.08)}}
+.ab-t{font-size:.8rem;font-weight:700;color:var(--ink)}
+.ab-t b{color:var(--navy);font-weight:700;margin-left:2px}
+.ab-s{font-size:.74rem;color:var(--mute);margin-top:2px;line-height:1.5}
+.ab-s b{color:var(--ink2);font-weight:600}
+.ab-s.warn{color:var(--warn)}.ab-s.bad{color:var(--bad)}
+.ab-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ab-next{font-size:.72rem;color:var(--mute);white-space:nowrap}
+.ab-hist{flex:1 1 100%;border-top:1px dashed var(--line);margin-top:2px;padding-top:8px}
+.ab-row{display:grid;grid-template-columns:118px 76px 1fr;gap:10px;font-size:.73rem;padding:3px 0;color:var(--ink2)}
+.ab-row .k{color:var(--mute)}
+.ab-row .r{font-weight:600}.ab-row .r.applied{color:var(--ok)}.ab-row .r.hold{color:var(--warn)}.ab-row .r.fail,.ab-row .r.skip{color:var(--bad)}.ab-row .r.same{color:var(--mute)}
+@media(prefers-reduced-motion:reduce){.ab-dot.run{animation:none}}
+@media(max-width:640px){.ab-row{grid-template-columns:1fr}}
 @media(max-width:900px){.steps{grid-template-columns:1fr}.step{min-height:0}}
 @media(max-width:640px){.card{padding:14px}.topbar-in{padding:12px 14px}.wrap,.privacy{padding-left:12px;padding-right:12px}.team{grid-template-columns:1fr 130px}.team .c{display:none}.team select{width:130px}}
 </style>
@@ -270,6 +292,18 @@ tr.warnrow td{background:var(--warn-bg)}
   <!-- 1. 가져오기 -->
   <div class="card">
     <div class="sec">1. Flex 구성원 가져오기</div>
+    <!-- 자동 수집(10-05) — 이 창과 Flex 구성원 탭을 열어 두면 08:00 · 20:00 에 가져와, 안전하면 STK-DB 에 반영한다 -->
+    <div class="auto-bar" id="auto-bar">
+      <div class="ab-l"><span class="ab-dot" id="ab-dot"></span>
+        <div style="min-width:0"><div class="ab-t">자동 수집 · 반영<b>08:00 · 20:00</b></div><div class="ab-s" id="ab-s">확인 중…</div></div></div>
+      <div class="ab-r">
+        <span class="ab-next" id="ab-next"></span>
+        <button class="btn sm" id="ab-now" onclick="autoRunNow()" title="Flex 탭에 지금 한 번 요청해 같은 절차(가져오기 → 비교 → 안전하면 반영)를 돌립니다">지금 한 번</button>
+        <button class="btn sm" onclick="autoHistToggle()">기록</button>
+        <label class="tog" title="이 브라우저에서만 저장됩니다"><input type="checkbox" id="ab-on" onchange="autoToggle(this.checked)"> 켜기</label>
+      </div>
+      <div class="ab-hist hidden" id="ab-hist"></div>
+    </div>
     <div class="seg" role="tablist"><button class="on" id="tab-auto" onclick="showTab('auto')">자동 수집</button><button id="tab-file" onclick="showTab('file')">파일 · 붙여넣기</button></div>
     <div id="pane-auto">
       <div class="steps">
@@ -394,25 +428,41 @@ tr.warnrow td{background:var(--warn-bg)}
         그 안의 목록을 내려 구성원 요청(search-users)과 응답을 깨끗하게 잡는다. iframe 이 막히면 지금 탭에서 조용히 목록을 내려 잡는다.
      ③ 잡은 요청 안에서 continuation 자리를(본문 JSON 어느 키 · query · 헤더) 응답의 continuation 으로 실제로 보내 보며 찾고 틀로 저장한다.
      ④ 첫 페이지부터 끝까지 읽어(전체 수와 맞는지 확인) HFS 창으로 postMessage(브라우저 안에서만). HFS 가 받았다고 답할 때까지 1초마다 보낸다. */
+  /* v11(10-05) — Flex 탭 상주. 북마크를 한 번 누르면 이 탭에 「받는 귀」 가 남는다.
+     · HFS 창이 08:00 · 20:00 에 'hfs-collect-request' 를 보내면, 저장된 틀(①)로 다시 읽어 그 창으로 돌려보낸다(자동).
+       자동일 때는 창을 열거나 포커스를 옮기지 않고, 사용자 탭을 내리지도 않는다(②의 iframe 잡기까지만, 천천히 내리기 없음).
+       끝까지 못 읽으면 일부만 보내지 않고 실패로 알린다 — 반쪽 명단이 반영되지 않게.
+     · 요청은 이 탭이 마지막으로 연 HFS 창(window.__hfsHome)에서 온 것만 받는다.
+     · 20초마다 HFS 창에 'hfs-flex-hello' 를 보내 「Flex 탭이 살아 있다」 를 알린다(HFS 화면의 연결 표시).
+     · 북마크를 다시 누르면 상주 코드도 그 최신 코드로 바뀐다(귀는 하나만 둔다). */
   var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin, TPL_KEY = 'hfs.collect.tpl.v1';
   if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-  if (window.__hfsRun) { try { window.__hfsRun.focus(); } catch (e) {} return; }
-  var hfsWin = window.open(HFS, 'hfs');
+  var V = 11;
+  var main = async function (ctx) {
+  ctx = ctx || {};
+  var AUTO = !!ctx.auto, KEY = String(ctx.key || '');
+  if (window.__hfsRun) {
+    if (AUTO) { try { ctx.win.postMessage({ type: 'hfs-flex-progress', stage: 'error', v: V, auto: true, key: KEY, busy: true, text: 'Flex 탭에서 수집이 이미 진행 중입니다' }, ORG); } catch (e) {} }
+    else { try { window.__hfsRun.focus(); } catch (e) {} }
+    return;
+  }
+  var hfsWin = AUTO ? ctx.win : window.open(HFS, 'hfs');
   if (!hfsWin) { alert('HFS 창이 열리지 않았습니다 — 브라우저의 팝업 차단을 이 사이트에서 풀고 다시 눌러 주세요.'); return; }
-  try { hfsWin.focus(); } catch (e) {}
+  if (!AUTO) { try { hfsWin.focus(); } catch (e) {} }
   window.__hfsRun = hfsWin;
-  var diag = [], lastProg = null, finished = false;
+  window.__hfsHome = hfsWin;   /* 상주 귀가 요청을 받고 신호를 보낼 HFS 창 */
+  var diag = [], lastProg = null, finished = false, onAck = null;
   var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
-  var V = 10, RID = Math.random().toString(36).slice(2);
-  var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, rid: RID, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
+  var RID = Math.random().toString(36).slice(2);
+  var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, rid: RID, auto: AUTO, key: KEY, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
   var beat = setInterval(function () { if (finished || !lastProg) return; if (hfsWin.closed) { clearInterval(beat); window.__hfsRun = null; return; } try { hfsWin.postMessage(lastProg, ORG); } catch (e) {} }, 1000);
-  var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; };
+  var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; if (onAck) { window.removeEventListener('message', onAck); onAck = null; } };
   var fail = function (text) { log('실패: ' + text); prog('error', { text: text, diag: diag.join('\n') }); done(); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var tval = function (t) { return t && typeof t === 'object' ? (t.value || t.count || t.total || 0) : (t || 0); };
   var pathOf = function (u) { try { return new URL(u, location.href).pathname; } catch (e) { return u; } };
   var F = window.fetch;
-  log('시작 v' + V + ' ' + location.href); prog('capture');
+  log('시작 v' + V + (AUTO ? ' (자동 ' + KEY + ')' : '') + ' ' + location.href); prog('capture');
   var users = new Map(), total = 0;
   var listOf = function (j) { return (j && (j.list || (j.data && j.data.list))) || []; };
   var emailsOf = function (j) { return listOf(j).map(function (u) { return u && u.basicInfo && u.basicInfo.email ? String(u.basicInfo.email).trim().toLowerCase() : ''; }).filter(Boolean); };
@@ -547,12 +597,14 @@ tr.warnrow td{background:var(--warn-bg)}
   var ok = false, best = new Map(), keepBest = function () { if (users.size > best.size) best = new Map(users); };
   /* ① 저장된 틀 */
   var T = loadTpl();
-  if (T) { log('저장된 틀 사용: ' + T.method + ' ' + pathOf(T.url)); try { ok = await readAll(T); } catch (e) { keepBest(); log('저장된 틀 실패: ' + e.message + ' → 다시 잡는다'); dropTpl(); } }
+  /* 자동일 때는 틀을 지우지 않는다 — 실패는 대개 Flex 로그인이 잠깐 만료된 것이고, 헤더는 실행 때마다 저장소에서 새로 만들기 때문에
+     Flex 가 다시 로그인하면 같은 틀이 그대로 먹는다. 지워 버리면 다음 재시도부터는 느린 iframe 잡기만 남는다. 수동 실행은 예전처럼 지우고 새로 잡는다. */
+  if (T) { log('저장된 틀 사용: ' + T.method + ' ' + pathOf(T.url)); try { ok = await readAll(T); } catch (e) { keepBest(); log('저장된 틀 실패: ' + e.message + (AUTO ? ' → 틀은 둔다(자동)' : ' → 다시 잡는다')); if (!AUTO) dropTpl(); } }
   if (!ok) {
     var caps = [], liveRes = [], sink = function () { return window.__hfsSink; };
     window.__hfsSink = { caps: caps, liveRes: liveRes };   /* 지금 실행의 모을 곳 — 탭의 가로채기는 한 번만 설치하고 여기만 바꾼다 */
     await freshCapture(sink);
-    if (!caps.length) await tabCapture(sink);
+    if (!caps.length && !AUTO) await tabCapture(sink);   /* 자동일 때는 사용자가 보고 있을 수 있는 탭을 내리지 않는다 */
     if (!caps.length) { fail('Flex 구성원 목록을 불러오지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
     /* 잡은 것 중 요청에 토큰이 실린 것(둘째 페이지 이후 — continuation 자리를 알 수 있다)을 우선, 없으면 다음 페이지가 있는 것 */
     var tokish = function (v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{20,}$/.test(v); };
@@ -589,7 +641,7 @@ tr.warnrow td{background:var(--warn-bg)}
     }
     log(slot ? 'continuation 자리: ' + cname(slot) : 'continuation 자리를 못 찾음');
     if (slot) { C.slot = slot; try { ok = await readAll(C); saveTpl(C, slot); } catch (e) { keepBest(); log('읽기 실패: ' + e.message); } }
-    if (!ok) {   /* 천천히 끝까지 내리며 모으기 — Flex 는 내릴 때마다 다음 20명을 조금씩 늦게 부른다. 새 응답이 올 때까지 기다렸다 다시 내린다 */
+    if (!ok && !AUTO) {   /* 천천히 끝까지 내리며 모으기(자동일 땐 하지 않는다 — 탭이 보여야 하고 최대 10분 걸린다) — Flex 는 내릴 때마다 다음 20명을 조금씩 늦게 부른다. 새 응답이 올 때까지 기다렸다 다시 내린다 */
       users = new Map(); total = 0; caps.forEach(function (c) { add(c.res); }); liveRes.splice(0);
       hookTab();
       var lastNext = true; caps.forEach(function (c) { if (c.res && c.res.hasNext === false) lastNext = false; });
@@ -614,10 +666,12 @@ tr.warnrow td{background:var(--warn-bg)}
     }
     closeFrame();
   }
+  if (AUTO && !ok) { fail('자동 수집: 저장된 연결로 끝까지 읽지 못했습니다(' + users.size + (total ? '/' + total : '') + '명). Flex 로그인이 풀렸거나 화면이 바뀌었을 수 있습니다 — Flex 탭에서 「HFS 수집」 을 한 번 다시 눌러 주세요.'); return; }
   if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
   /* ④ HFS 창으로 */
-  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, rid: RID }, acked = false;
-  window.addEventListener('message', function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } });
+  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, rid: RID, auto: AUTO, key: KEY }, acked = false;
+  onAck = function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } };
+  window.addEventListener('message', onAck);
   log('보냄: ' + users.size + '명' + (total ? ' / ' + total : ''));
   prog('send', { count: users.size, total: total, partial: !complete() });
   for (var n = 0; n < 600 && !acked; n++) {
@@ -626,6 +680,22 @@ tr.warnrow td{background:var(--warn-bg)}
     await sleep(1000);
   }
   if (!acked) { done(); }
+  };
+  /* ── 상주 귀 — 탭마다 하나. 다시 누르면 main 만 최신으로 바꾼다 ── */
+  var R = window.__hfsResident;
+  if (!R) {
+    R = window.__hfsResident = { main: main, v: V };
+    window.addEventListener('message', function (ev) {
+      if (ev.origin !== ORG || !ev.data || ev.data.type !== 'hfs-collect-request') return;
+      if (!window.__hfsHome || ev.source !== window.__hfsHome) return;   /* 이 탭이 연 HFS 창의 요청만 */
+      window.__hfsResident.main({ auto: true, win: ev.source, key: ev.data.key });
+    });
+    var hello = function () { var w = window.__hfsHome; if (!w || w.closed) return; try { w.postMessage({ type: 'hfs-flex-hello', v: window.__hfsResident.v, tpl: !!localStorage.getItem(TPL_KEY), busy: !!window.__hfsRun, at: Date.now() }, ORG); } catch (e) {} };
+    R.hello = hello;
+    setInterval(hello, 20000);
+  } else { R.main = main; R.v = V; }
+  await main({ auto: false });
+  try { R.hello(); } catch (e) {}
 })();
 </script>
 <script>
@@ -992,13 +1062,16 @@ function pmSet(sub, html, note, goText) {
   const go = document.getElementById('pm-go');
   if (goText) { go.classList.remove('hidden'); go.textContent = goText; go.disabled = false; } else go.classList.add('hidden');
 }
-function pmStop(html) { _pushBusy = false; pmSet('반영할 수 없습니다', html, '', null); document.getElementById('pm-cancel').textContent = '닫기'; }
+let _pushStop = { kind: '', text: '' };   // 반영을 멈춘 이유 — 자동 수집이 기록에 옮겨 적는다(guard 조건 · error 읽기 실패)
+let _autoLabel = '';                       // 자동 실행이면 모달 제목에 회차를 붙인다
+function pmStop(html, kind) { _pushBusy = false; _pushStop = { kind: kind || 'guard', text: String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replace(/^\s*•\s*/, '').trim() }; pmSet('반영할 수 없습니다', html, '', null); document.getElementById('pm-cancel').textContent = '닫기'; }
 
 /* ① + ② + ③ — 읽고, 따져 보고, 미리 보여 준다 */
 async function pushOpen() {
   if (_pushBusy) return;
   if (!ROWS.length) { alert('먼저 Flex 구성원을 가져와 주세요.'); return; }
-  _push = null; _pushBusy = true;
+  _push = null; _pushBusy = true; _pushStop = { kind: '', text: '' };
+  document.getElementById('pm-title').textContent = _autoLabel ? 'STK-DB 에 반영 · 자동 ' + _autoLabel : 'STK-DB 에 반영';
   document.getElementById('pm-cancel').textContent = '취소';
   pmSet('employee_search.xlsx 를 읽는 중입니다…', '<div class="pm-meta">STK-DB 에서 지금 쓰고 있는 명부를 먼저 읽습니다.</div>', '창을 닫지 마세요', null);
   pmShow();
@@ -1101,8 +1174,7 @@ async function pushOpen() {
     pmSet('아래 내용대로 STK-DB 의 명부를 바꿉니다', H, '되돌리려면 Backup 폴더의 파일을 덮어쓰면 됩니다', '반영');
     if (risky) document.getElementById('pm-go').disabled = true;
   } catch (e) {
-    pmStop('<div class="pm-box pm-bad">명부를 읽지 못했습니다 — <b>' + esc(e.message) + '</b><br>' +
-      '권한(Files.ReadWrite.All) 이나 파일 위치를 확인해 주세요. 아무것도 바꾸지 않았습니다.</div>');
+    pmStop(_pmErrHtml(e), 'error');   // 읽기 실패 — 자동 수집은 「실패」 로 기록(조건 미달 「보류」 와 구분)
   }
 }
 
@@ -1116,8 +1188,9 @@ function pmProg(i, state, sub) {
   }).join('');
   document.getElementById('pm-body').innerHTML = '<div class="fm-steps" style="padding:0">' + html + '<div class="fm-bar indet"><i></i></div></div>';
 }
+function _pmErrHtml(e) { return '<div class="pm-box pm-bad">명부를 읽지 못했습니다 — <b>' + esc(e.message) + '</b><br>권한(Files.ReadWrite.All) 이나 파일 위치를 확인해 주세요. 아무것도 바꾸지 않았습니다.</div>'; }
 async function pushRun() {
-  if (!_push || _pushBusy) return;
+  if (!_push || _pushBusy) return { ok: false, err: '반영 창이 준비되지 않았거나 이미 진행 중입니다' };
   const P = _push;
   const doVl = !!(P.vl && document.getElementById('pm-vl') && document.getElementById('pm-vl').checked);   // 화면이 바뀌기 전에 체크 상태를 챙긴다
   PM_STEPS = [['백업', '지금 파일을 Backup 폴더로 복사'], ['쓰기', '첫 시트의 칸만 고침']]
@@ -1207,6 +1280,7 @@ async function pushRun() {
             (vlDone.cleared ? ' · 남은 ' + vlDone.cleared + '줄은 비웠습니다' : '') + (P.vl.refErr ? ' · #REF! ' + P.vl.refErr + '칸도 함께 풀렸습니다' : '')) + '</div>' : '') +
       '<div class="pm-meta">백업 <b>' + esc(backupPath) + '</b><br>APS · GW · IT · ACC 등은 다음에 화면을 열 때(또는 새로고침할 때) 바뀐 명부를 읽습니다.</div>';
     try { applyCompare('STK-DB employee_search.xlsx (반영 직후)', vbuf); } catch (e) {}
+    return { ok: !bad, mismatch: !!bad, backup: backupPath, read: got.size };
   } catch (e) {
     await closeSes();
     _pushBusy = false;
@@ -1218,6 +1292,7 @@ async function pushRun() {
       (backupPath ? '백업은 <b>' + esc(backupPath) + '</b> 에 남아 있습니다. 파일이 어중간하게 바뀌었다면 이 백업으로 되돌려 주세요.' :
         '백업 전에 멈췄으므로 명부는 그대로입니다.') + '</div>';
     logAction('STK-DB 반영 실패', { file: EMP_FILE, reason: String(e.message).slice(0, 200), backup: backupPath });
+    return { ok: false, err: String(e.message), backup: backupPath };
   }
 }
 
@@ -1264,10 +1339,14 @@ document.getElementById('btn-login').onclick = async () => {
   try { await msalApp.loginRedirect({ scopes: SCOPES }); } catch (e) { loginErr(e.message); }
 };
 function signOut() { try { msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + window.location.pathname }); } catch (e) { location.reload(); } }
+let _silentOnly = false;   // 자동 실행 중 — 로그인이 만료돼도 다른 화면으로 넘기지 않고 오류로 알린다(사람이 없는 시각이다)
 async function token() {
   const account = msalApp.getActiveAccount();
   try { return (await msalApp.acquireTokenSilent({ scopes: SCOPES, account })).accessToken; }
-  catch (e) { await msalApp.acquireTokenRedirect({ scopes: SCOPES }); return null; }
+  catch (e) {
+    if (_silentOnly) throw new Error('Microsoft 로그인이 만료되었습니다 — HFS 창을 새로고침해 다시 로그인해 주세요');
+    await msalApp.acquireTokenRedirect({ scopes: SCOPES }); return null;
+  }
 }
 async function api(path) {
   const t = await token();
@@ -1299,6 +1378,7 @@ async function boot(account) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.remove('hidden');
   _authorized = true;
+  renderAuto(); setTimeout(autoTick, 1500);   // 자동 수집 막대 — 로그인 직후 한 번 확인
   if (_flexInbox) flexInboxFlush();                                   // 로그인 전에 flex.team 북마클릿이 보낸 목록이 있으면 지금 넣는다
   else if (_fmLast) { fmShow(); fmSet(_fmLast); }   // 로그인 전에 받은 진행 신호가 있으면 팝업
 }
@@ -1407,6 +1487,18 @@ const FLEX_ORIGIN = 'https://flex.team';
 let _flexInbox = null, _authorized = false; const _doneRids = new Set();
 window.addEventListener('message', ev => {
   if (ev.origin !== FLEX_ORIGIN || !ev.data) return;
+  if (ev.data.type === 'hfs-flex-hello') { autoSeen(ev.source, ev.data); return; }   // Flex 탭의 상주 수집기가 20초마다 보내는 신호
+  if (ev.data.type === 'hfs-flex-progress' && ev.data.auto) { autoSeen(ev.source, ev.data); autoProgress(ev.data); return; }   // 자동 진행은 팝업 없이 막대에만
+  if (ev.data.type === 'hfs-flex-users' && ev.data.rid && _doneRids.has(ev.data.rid)) { try { ev.source.postMessage({ type: 'hfs-flex-ack', count: 0 }, ev.origin); } catch (e) {} return; }   // 답을 받기 전 1초마다 다시 오는 같은 목록
+  if (ev.data.type === 'hfs-flex-users' && ev.data.auto && Array.isArray(ev.data.users)) {
+    autoSeen(ev.source, ev.data);
+    if (ev.data.rid) _doneRids.add(ev.data.rid);
+    if (!_authorized) { try { ev.source.postMessage({ type: 'hfs-flex-wait' }, ev.origin); } catch (e) {} autoNote('Flex 에서 받았지만 HFS 로그인 전이라 반영하지 못했습니다 — 로그인해 주세요', 'bad'); return; }
+    _flexInbox = ev.data; const n = flexInboxFlush(true);
+    try { ev.source.postMessage({ type: 'hfs-flex-ack', count: n }, ev.origin); } catch (e) {}
+    autoReceived(ev.data, n);
+    return;
+  }
   if (ev.data.type === 'hfs-flex-progress') {
     if (!ev.data.v || _doneRids.has(ev.data.rid)) return;   // 예전 북마크 · 이미 끝난 실행이 다른 Flex 탭에서 계속 보내는 신호는 무시(새로고침 때 팝업이 다시 뜨던 것)
     _fmLast = ev.data; if (_authorized) fmSet(ev.data); return;
@@ -1416,6 +1508,173 @@ window.addEventListener('message', ev => {
   if (_authorized) { const n = flexInboxFlush(); try { ev.source.postMessage({ type: 'hfs-flex-ack', count: n }, ev.origin); } catch (e) {} }
   else { try { ev.source.postMessage({ type: 'hfs-flex-wait' }, ev.origin); } catch (e) {} }
 });
+/* ══ 자동 수집 · 반영 08:00 · 20:00 (10-05) ══════════════════════════════════
+   HFS(github.io)는 브라우저 보안 규칙 때문에 flex.team 을 직접 읽을 수 없다. 그래서 Flex 구성원 탭에서 「HFS 수집」 을 한 번 누르면
+   그 탭에 수집기가 남고(상주 귀), 이 창이 정해진 시각에 그 탭으로 「지금 읽어 줘」 를 보낸다. 두 탭을 열어 두기만 하면 된다.
+   · 예정 시각(KST 08:00 · 20:00)이 지났고 그 회차를 아직 끝내지 않았으면 돈다 — 배경 탭에서 타이머가 늦어도 놓치지 않게(WMC 와 같은 판정).
+     예정 시각부터 2시간 안에서만 돈다(늦게 연 창이 지난 회차를 되살리지 않게). 끝난 회차는 이 브라우저에 기록해 두 번 돌지 않는다.
+   · 실패하면 5분 뒤 다시(최대 3번). Flex 탭이 안 보이면 연결될 때까지 기다린다.
+   · 받은 뒤 「STK-DB 에 반영」 과 같은 절차로 미리보기를 만들고,
+       확인 필요 · 열 모양 · 메일 중복 같은 가드에 걸리면           → 보류(미리보기 창에 이유)
+       빠지는 사람이 있으면(퇴사 · 수집 누락 구분이 필요)             → 보류(미리보기를 열어 둔다 — 사람이 보고 「반영」)
+       휴직자 · 계약직 포함 체크가 꺼져 있으면                       → 보류
+       바뀐 것이 없으면(vlookup 거울도 정상)                          → 쓰지 않는다(백업 파일도 만들지 않는다)
+       그 밖(신규 · 바뀜만)                                            → 백업 → 반영 → 다시 읽어 대조
+   · 사람이 없는 시각이라 로그인이 만료돼도 다른 화면으로 넘기지 않고 「실패 — 로그인 만료」 로 남긴다.
+   · 결과는 이 막대 · 「기록」(이 브라우저, 최근 14건) · Logging_data/APS/HFS(「자동 수집」) 에 남는다. 보류 · 실패면 탭 제목 앞에 ● 를 붙인다. */
+const AUTO_SLOTS = [8, 20];                 // KST 시
+const AUTO_WINDOW_MS = 2 * 3600e3;          // 예정 시각부터 이 안에서만
+const AUTO_RETRY_MS = 5 * 60e3;             // 실패 뒤 다시 시도 간격
+const AUTO_WAIT_MS = 4 * 60e3;              // Flex 탭이 답할 때까지 기다리는 시간
+const AUTO_MAX_TRY = 3;
+const LS_AUTO = 'hfs.auto.v1';
+const _pageAt = Date.now();
+let _flexWin = null, _flexSeen = 0, _flexV = 0, _flexTpl = false, _flexBusy = false;
+let _autoCur = null;                        // 진행 중 회차 { key, manual, tries, phase:'wait'|'retry'|'apply', sentAt, retryAt, err, prog }
+let _autoNote = null;                       // 막대에 잠깐 띄울 말 { text, cls }
+let _auto = (() => { try { const o = JSON.parse(ls.get(LS_AUTO) || 'null'); if (o && typeof o === 'object') return { on: o.on !== false, done: o.done || {}, hist: Array.isArray(o.hist) ? o.hist : [] }; } catch (e) {} return { on: true, done: {}, hist: [] }; })();
+try { window.name = 'hfs'; } catch (e) {}  // Flex 탭의 북마크(window.open(HFS,'hfs'))가 새 탭 대신 이 창을 쓰게
+function autoSave() {
+  const cut = Date.now() - 4 * 86400e3;     // 끝난 회차 표식은 나흘치만
+  Object.keys(_auto.done).forEach(k => { if ((_auto.done[k] && _auto.done[k].at || 0) < cut) delete _auto.done[k]; });
+  _auto.hist = _auto.hist.slice(0, 14);
+  ls.set(LS_AUTO, JSON.stringify(_auto));
+}
+// 회차 목록 — 어제 · 오늘 · 내일의 08:00 · 20:00. KST 시계를 UTC 필드로 다룬다(APS 공통 방식)
+function autoSlots(now) {
+  const k = new Date(now + 9 * 3600e3), out = [];
+  for (const dd of [-1, 0, 1]) for (const hh of AUTO_SLOTS) {
+    const kst = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + dd, hh, 0, 0);
+    out.push({ t: kst - 9 * 3600e3, key: new Date(kst).toISOString().slice(0, 10) + ' ' + String(hh).padStart(2, '0') + ':00' });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+function autoDue(now) { return autoSlots(now).filter(s => now >= s.t && now - s.t < AUTO_WINDOW_MS).pop() || null; }
+function autoNext(now) { return autoSlots(now).find(s => s.t > now) || null; }
+function flexAlive() { try { return !!(_flexWin && !_flexWin.closed && Date.now() - _flexSeen < 70000); } catch (e) { return false; } }
+function autoSeen(src, d) { if (src) _flexWin = src; _flexSeen = Date.now(); if (d && d.v) _flexV = d.v; if (d && 'tpl' in d) _flexTpl = !!d.tpl; if (d && 'busy' in d) _flexBusy = !!d.busy; renderAuto(); }
+function autoNote(text, cls) { _autoNote = { text, cls: cls || '' }; renderAuto(); }
+function autoToggle(on) { _auto.on = !!on; autoSave(); _autoNote = null; if (!on && _autoCur && !_autoCur.manual && _autoCur.phase === 'retry') _autoCur = null; renderAuto(); if (on) autoTick(); }
+function autoHistToggle() { const el = document.getElementById('ab-hist'); el.classList.toggle('hidden'); renderAuto(); }
+const AUTO_LABEL = { applied: '반영', hold: '보류', same: '변경 없음', fail: '실패', skip: '건너뜀' };
+function autoCounts(r) { return (r.added != null) ? '신규 ' + r.added + ' · 바뀜 ' + r.changed + ' · 빠짐 ' + r.removed : ''; }
+function renderAuto() {
+  const dot = document.getElementById('ab-dot'), s = document.getElementById('ab-s'), nx = document.getElementById('ab-next'), on = document.getElementById('ab-on'), now = Date.now();
+  if (!dot) return;
+  on.checked = _auto.on;
+  const alive = flexAlive(), last = _auto.hist[0];
+  let cls = '', text = '', tcls = '';
+  if (!_auto.on) { cls = ''; text = '꺼짐 — 켜 두면 이 창과 Flex 구성원 탭이 열려 있는 동안 08:00 · 20:00 에 가져와, 안전하면 STK-DB 에 반영합니다'; }
+  else if (_autoCur && (_autoCur.phase === 'wait' || _autoCur.phase === 'apply')) { cls = 'run'; text = (_autoCur.manual ? '지금 한 번' : _autoCur.key + ' 회차') + ' — ' + (_autoCur.phase === 'apply' ? 'STK-DB 와 비교 · 반영하는 중' : (_autoCur.prog || 'Flex 탭에서 읽는 중')); }
+  else if (_autoCur && _autoCur.phase === 'retry' && !_autoCur.tries) { cls = 'wait'; tcls = 'warn'; text = _autoCur.key + ' 회차 — Flex 탭 연결을 기다리는 중입니다. Flex 구성원 화면에서 「HFS 수집」 을 한 번 눌러 주세요 (예정 시각부터 2시간 안에 연결되면 그때 돕니다)'; }
+  else if (_autoCur && _autoCur.phase === 'retry') { cls = 'wait'; tcls = 'warn'; text = _autoCur.key + ' 회차 — ' + (_autoCur.err || '실패') + ' · ' + Math.max(1, Math.ceil((_autoCur.retryAt - now) / 60000)) + '분 뒤 다시 (' + _autoCur.tries + '/' + AUTO_MAX_TRY + '번 시도함)'; }
+  else if (!alive) { cls = 'wait'; tcls = 'warn'; text = 'Flex 탭이 연결되지 않았습니다 — Flex 구성원 화면에서 「HFS 수집」 을 한 번 눌러 두면 그다음부터 자동입니다 (Flex 탭은 닫지 마세요)'; }
+  else { cls = 'ok'; text = 'Flex 탭 연결됨 · 수집기 v' + (_flexV || '?') + (_flexTpl ? '' : ' · 저장된 연결 없음(첫 수집이 끝나면 생김)'); }
+  if (_autoNote && !(_autoCur && _autoCur.phase !== 'retry')) { text = _autoNote.text; tcls = _autoNote.cls; if (_autoNote.cls === 'bad') cls = 'bad'; }
+  if (last && _auto.on) {
+    const r = last, when = new Date(r.at + 9 * 3600e3).toISOString().slice(5, 16).replace('T', ' ');
+    text += '<br>최근 ' + esc(r.manual ? '지금 한 번' : r.key) + ' · <b>' + (AUTO_LABEL[r.result] || r.result) + '</b>' + (autoCounts(r) ? ' — ' + autoCounts(r) : '') + (r.reason ? ' · ' + esc(r.reason) : '') + ' <span style="opacity:.7">(' + when + ')</span>';
+    if (!_autoCur && (r.result === 'fail' || r.result === 'skip') && cls !== 'run') cls = 'bad';
+    if (!_autoCur && r.result === 'hold' && cls === 'ok') cls = 'wait';
+  }
+  dot.className = 'ab-dot ' + cls; s.className = 'ab-s ' + tcls; s.innerHTML = text;
+  const n = autoNext(now); nx.textContent = _auto.on && n ? '다음 ' + new Date(n.t + 9 * 3600e3).toISOString().slice(11, 16) : '';
+  document.getElementById('ab-now').disabled = !!(_autoCur && _autoCur.phase !== 'retry') || !_authorized;
+  const hb = document.getElementById('ab-hist');
+  if (!hb.classList.contains('hidden')) hb.innerHTML = _auto.hist.length ? _auto.hist.map(r => '<div class="ab-row"><span class="k">' + esc(r.manual ? '지금 한 번' : r.key) + '</span><span class="r ' + esc(r.result) + '">' + esc(AUTO_LABEL[r.result] || r.result) + '</span><span>' + esc([autoCounts(r), r.reason, r.backup ? '백업 ' + r.backup : ''].filter(Boolean).join(' · ')) + '</span></div>').join('') : '<div class="ab-s">아직 기록이 없습니다.</div>';
+  const flag = _auto.on && last && !_autoCur && (last.result === 'hold' || last.result === 'fail' || last.result === 'skip');
+  const base = document.title.replace(/^● /, ''); document.title = flag ? '● ' + base : base;
+}
+function autoFinish(key, r) {
+  const c = _autoCur && _autoCur.key === key ? _autoCur : null, manual = !!(c && c.manual);
+  const rec = Object.assign({ key, at: Date.now(), manual, tries: c ? c.tries : 0 }, r);
+  if (!manual) _auto.done[key] = { at: rec.at, result: rec.result };
+  _auto.hist.unshift(rec); autoSave();
+  _autoCur = null; _autoNote = null;
+  logAction('자동 수집', { slot: manual ? 'manual' : key, result: rec.result, rows: rec.rows, added: rec.added, changed: rec.changed, removed: rec.removed, reason: rec.reason || '', backup: rec.backup || '', tries: rec.tries });
+  renderAuto();
+}
+function autoSend(c) {
+  const now = Date.now();
+  if (!flexAlive()) { c.phase = 'retry'; c.retryAt = now + 60e3; c.err = 'Flex 탭 연결 없음'; if (c.manual) { _autoCur = null; autoNote('Flex 탭이 연결되지 않았습니다 — Flex 구성원 화면에서 「HFS 수집」 을 한 번 눌러 주세요', 'warn'); } renderAuto(); return; }
+  if (c.tries >= AUTO_MAX_TRY) { autoFinish(c.key, { result: 'fail', reason: c.err || '응답 없음' }); return; }
+  c.tries++; c.phase = 'wait'; c.sentAt = now; c.prog = '';
+  try { _flexWin.postMessage({ type: 'hfs-collect-request', key: c.key }, FLEX_ORIGIN); }
+  catch (e) { c.phase = 'retry'; c.retryAt = now + AUTO_RETRY_MS; c.err = 'Flex 탭에 요청을 보내지 못함'; }
+  renderAuto();
+}
+function autoTick() {
+  const now = Date.now();
+  if (_auto.on) {
+    // 이 창이 열려 있던 동안 시간이 다 지나도록 끝내지 못한 회차는 「건너뜀」 으로 남긴다
+    autoSlots(now).forEach(s => {
+      if (now - s.t >= AUTO_WINDOW_MS && s.t + AUTO_WINDOW_MS > _pageAt && !_auto.done[s.key] && _authorized) {
+        const mine = _autoCur && _autoCur.key === s.key, prev = mine ? null : _autoCur;   // 다른 실행(지금 한 번 등)은 보존
+        const why = (mine && _autoCur.err) || (flexAlive() ? '시간 안에 끝내지 못함' : 'Flex 탭 연결 없음');
+        _autoCur = { key: s.key, manual: false, tries: mine ? _autoCur.tries : 0 }; autoFinish(s.key, { result: 'skip', reason: why });
+        _autoCur = prev;
+      }
+    });
+  }
+  if (_authorized && _autoCur) {
+    const c = _autoCur;
+    if (c.phase === 'wait' && now - c.sentAt > AUTO_WAIT_MS) { c.phase = 'retry'; c.retryAt = now; c.err = 'Flex 탭이 ' + Math.round(AUTO_WAIT_MS / 60000) + '분 동안 답하지 않음'; }
+    if (c.phase === 'retry' && now >= c.retryAt && (c.manual || _auto.on)) autoSend(c);
+  } else if (_authorized && _auto.on) {
+    const s = autoDue(now);
+    if (s && !_auto.done[s.key]) { _autoCur = { key: s.key, manual: false, tries: 0, phase: 'retry', retryAt: now }; autoSend(_autoCur); }
+  }
+  renderAuto();
+}
+function autoRunNow() {
+  if (!_authorized || (_autoCur && _autoCur.phase !== 'retry')) return;
+  const k = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
+  _autoNote = null;
+  _autoCur = { key: k, manual: true, tries: 0, phase: 'retry', retryAt: Date.now() };
+  autoSend(_autoCur);
+}
+function autoProgress(d) {
+  const c = _autoCur; if (!c || d.key !== c.key) return;
+  if (d.stage === 'error') {
+    c.err = String(d.text || '수집 실패').slice(0, 160);
+    if (c.manual) { autoFinish(c.key, { result: 'fail', reason: c.err }); return; }
+    c.phase = 'retry'; c.retryAt = Date.now() + (d.busy ? 60e3 : AUTO_RETRY_MS);
+  } else if (c.phase === 'wait') {
+    c.prog = d.stage === 'read' ? 'Flex 에서 읽는 중 ' + (d.count || 0) + (d.total ? ' / ' + d.total : '') + '명' : d.stage === 'send' ? '받는 중' : 'Flex 탭에서 연결하는 중';
+  }
+  renderAuto();
+}
+async function autoReceived(d, n) {
+  const c = _autoCur;
+  if (!c || d.key !== c.key) return;            // 끝난 회차의 늦은 답 — 표만 바뀌고 반영은 하지 않는다
+  c.phase = 'apply'; renderAuto();
+  const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (d.total || 0);
+  let r;
+  try { r = await autoApply(c.key, n, tot); } catch (e) { r = { result: 'fail', reason: String(e && e.message || e).slice(0, 160) }; }
+  autoFinish(c.key, r);
+}
+// 받은 목록으로 「STK-DB 에 반영」 과 같은 절차를 밟되, 안전할 때만 끝까지 간다
+async function autoApply(key, n, tot) {
+  if (tot && n < tot) return { result: 'hold', rows: n, reason: 'Flex 전체 ' + tot + '명 중 ' + n + '명만 받음 — 반영하지 않음' };
+  if (_pushBusy) return { result: 'hold', reason: '그 시각에 「STK-DB 에 반영」 창이 진행 중이었음' };
+  if (!ROWS.length) return { result: 'hold', rows: 0, reason: '변환 결과가 비어 있음' };
+  _silentOnly = true; _autoLabel = key;
+  try {
+    _push = null;                    // 앞서 사람이 열었던 미리보기를 이어 쓰지 않는다 — 이번 목록으로만 판단
+    await pushOpen();
+    if (!_push) return { result: _pushStop.kind === 'error' ? 'fail' : 'hold', rows: ROWS.length, reason: (_pushStop.text || '반영 조건을 만족하지 않음').slice(0, 200) };
+    const P = _push, cnt = { rows: ROWS.length, added: P.nw.length, changed: P.chg.length, removed: P.gone.length };
+    const vlFix = !!(P.vl && (P.vl.refErr || P.vl.rowCount - 1 !== ROWS.length));
+    if (P.gone.length) return Object.assign({ result: 'hold', reason: '빠지는 사람이 있어 멈춤 — 퇴사자가 맞는지 확인한 뒤 열려 있는 창에서 「반영」 을 눌러 주세요' }, cnt);
+    if (P.risky) return Object.assign({ result: 'hold', reason: '휴직자 · 계약직 포함 체크가 꺼져 있음' }, cnt);
+    if (!P.nw.length && !P.chg.length && !vlFix) { pushClose(); return Object.assign({ result: 'same' }, cnt); }
+    const r = await pushRun();
+    if (r && r.ok) return Object.assign({ result: 'applied', backup: r.backup }, cnt);
+    return Object.assign({ result: 'fail', reason: (r && (r.err || (r.mismatch ? '반영 뒤 다시 읽은 명단이 맞지 않음' : ''))) || '반영 실패', backup: r && r.backup }, cnt);
+  } finally { _silentOnly = false; _autoLabel = ''; }
+}
+setInterval(autoTick, 20000);
+
 /* 수신 진행 팝업 — 북마클릿이 #collect 로 이 창을 열면 바로 띄우고, 진행 메시지(capture → read → send)로 단계를 옮긴다. 데이터가 들어오면 완료 표시 뒤 닫는다 */
 let _fmLast = null, _fmTimer = null, _fmShown = false;
 function fmShow() { document.getElementById('flex-modal').classList.add('show'); _fmShown = true; fmWatch(); }
@@ -1455,18 +1714,18 @@ let _fmDiag = '';
 function goFlex() { try { if (window.opener && !window.opener.closed) { window.opener.focus(); return; } } catch (e) {} alert('Flex 구성원 탭을 직접 눌러 주세요 — 다 불러오면 이 창에 자동으로 들어옵니다.'); }
 async function fmCopyDiag(btn) { try { await navigator.clipboard.writeText(_fmDiag); btn.textContent = '복사했습니다 ✓'; } catch (e) { prompt('아래 내용을 복사해 IT 에 보내 주세요', _fmDiag); } }
 let _fmLastIdx = null;
-function flexInboxFlush() {
+function flexInboxFlush(quiet) {
   if (!_flexInbox) return 0;
   const d = _flexInbox; _flexInbox = null; let n = 0;
   USERS = new Map(); CMP = null; resetMap(false);   // 새로 가져온 목록이 기준 — 이전 목록 · 매핑 변경 · 비교는 비운다
   d.users.forEach(u => { const e = u && u.basicInfo && u.basicInfo.email; if (!e) return; USERS.set(String(e).trim().toLowerCase(), u); n++; });
   const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (d.total || 0);
-  afterIngest('Flex 자동 수집 ' + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + ' · 수집 코드 ' + (d.v ? 'v' + d.v : '예전 북마크'));
+  afterIngest((quiet && d.key ? '자동 수집(' + d.key + ') ' : 'Flex 자동 수집 ') + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + ' · 수집 코드 ' + (d.v ? 'v' + d.v : '예전 북마크'));
   if (!d.v) { const m = document.getElementById('in-msg'); m.className = 'status warn'; m.textContent = '⚠ ' + n + '명 — 북마크가 예전 수집 코드로 돌았습니다. 북마크 바의 「HFS 수집」 을 지우고, 위 「HFS 수집」 단추를 다시 끌어다 놓은 뒤 Flex 에서 눌러 주세요.'; }
   fmSet({ stage: 'done', count: n, total: tot });
   if (_fmDiag) { const m = document.getElementById('in-msg'); const a = document.createElement('a'); a.href = '#'; a.textContent = '수집 기록 복사'; a.style.cssText = 'margin-left:10px;font-size:.72rem;color:#6b7280'; a.onclick = ev => { ev.preventDefault(); fmCopyDiag(a); }; m.appendChild(a); }
   try { sessionStorage.setItem('hfs.collected', '1'); } catch (e) {}   // 이 탭을 새로고침해도 받는 중 팝업이 다시 뜨지 않게
-  try { window.focus(); } catch (e) {}
+  if (!quiet) { try { window.focus(); } catch (e) {} }   // 자동 수집은 사용자가 보던 다른 창을 가로채지 않는다
   return n;
 }
 /* 북마클릿 단추 — href 를 javascript: 로 만들어 북마크 바로 끌어다 놓을 수 있게. 이 화면에서 누르면 실행하지 않고 안내만 */
