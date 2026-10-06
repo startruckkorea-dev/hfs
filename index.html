@@ -1031,6 +1031,7 @@ const EMP_FILE = 'employee_search.xlsx';
 const EMP_BACKUP_DIR = 'Backup/employee_search';
 const EMP_OWNED = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'Boss', 'Boss of Boss'];  // HFS 가 값을 정하는 열
 const EMP_KEYCOLS = ['EMail', 'EngName'];      // 이 둘이 머리글에 없으면 명부 파일이 아니라고 본다
+let PUSH_SAVE_WAIT_MS = 90e3, PUSH_SAVE_POLL_MS = 5e3;   // 반영 뒤 SharePoint 파일 저장을 기다리는 최대 시간 · 간격(10-06)
 const EMP_MIN_ROWS = 10;                        // 이보다 적으면 잘못 읽은 것으로 보고 멈춘다
 let _push = null;      // 미리 읽어 둔 것 { drive, item, wb, sheet, cols, body, used, diff, risky }
 let _pushBusy = false;
@@ -1309,20 +1310,43 @@ async function pushRun() {
     }
     await closeSes();
 
-    // ⑥ 확인 — APS 가 읽는 그대로(SheetJS · 첫 시트) 다시 읽어 대조한다
-    pmProg(PM_STEPS.length - 1, 'act', '다시 내려받아 대조하는 중…');
-    const t1 = await token();
-    const vr = await fetch(P.base + '/root:/' + EMP_FILE + ':/content', { headers: { Authorization: 'Bearer ' + t1 }, cache: 'no-store' });
-    if (!vr.ok) throw new Error('확인용으로 다시 읽지 못했습니다 (HTTP ' + vr.status + ') — 반영 자체는 끝났습니다');
-    const vbuf = await vr.arrayBuffer();
-    const vwb = XLSX.read(vbuf, { type: 'array' });
-    const vrows = XLSX.utils.sheet_to_json(vwb.Sheets[vwb.SheetNames[0]], { defval: '' });
-    const got = new Set(vrows.map(r => String(r.EMail || r.email || '').trim().toLowerCase()).filter(Boolean));
-    const missNow = ROWS.filter(r => !got.has(r.EMail)).map(r => r.EMail);
-    const extraNow = [...got].filter(e => !ROWS.some(r => r.EMail === e));
-    const sheetsLeft = vwb.SheetNames.length;
+    /* ⑥ 확인 (10-06 고침) — 예전엔 쓰자마자 파일을 내려받아 메일만 비교했다. 그런데 Excel Online 은 세션으로 고친 내용을 SharePoint 파일(바이너리)에
+       몇 초~1분 뒤에 저장하므로, 바로 받으면 「쓰기 전 파일」 이 와서 퇴사자가 「남아 있음」 으로 보였다(10-06 Chayoon Kim). 메일만 보니 그 전 회차들은
+       낡은 파일을 받아도 「일치」 로 지나갔다.
+       · 먼저 Excel(시트) 이 지금 들고 있는 값을 읽어 우리가 쓴 줄과 칸 단위(메일 · EngName · 본부 · 팀 · Boss · Boss of Boss)로 대조 — 쓰기가 맞았는지
+       · 그다음 APS 가 읽는 그대로(파일 내려받기 · SheetJS · 첫 시트) 같은 대조를 하되, 맞을 때까지 5초 간격으로 최대 90초 기다린다 — 저장이 끝났는지
+       · 시트는 맞는데 90초 안에 파일이 안 바뀌면 「저장 대기」 — 반영은 된 것이고, 잠시 뒤 「STK-DB 명부와 비교」 로 확인하라고 안내한다 */
+    const KEYC = ['EMail', 'EngName', 'Department', 'Team', 'Boss', 'Boss of Boss'];
+    const ci = c => P.cols.indexOf(c);
+    const want = new Map(P.body.map(r => [String(r[ci('EMail')] || '').trim().toLowerCase(), r]));
+    const rk = (get) => KEYC.map(c => { const v = String(get(c) == null ? '' : get(c)).trim(); return c === 'EMail' ? v.toLowerCase() : v; }).join('\u0001');
+    const vcheck = objs => {
+      const got = new Map(); objs.forEach(o => { const e = String(o.EMail || o.email || '').trim().toLowerCase(); if (e) got.set(e, o); });
+      const miss = [...want.keys()].filter(e => !got.has(e)), extra = [...got.keys()].filter(e => !want.has(e));
+      const off = [...want.keys()].filter(e => got.has(e) && rk(c => got.get(e)[c]) !== rk(c => ci(c) < 0 ? '' : want.get(e)[ci(c)]));
+      return { n: got.size, miss, extra, off, ok: !miss.length && !extra.length && !off.length };
+    };
+    pmProg(PM_STEPS.length - 1, 'act', 'Excel 시트의 값을 읽어 대조하는 중…');
+    let sv = null;
+    try { const u = await gx('GET', P.sUrl + '/usedRange(valuesOnly=true)?$select=values'); const v = (u && u.values) || [];
+      const hd = (v[0] || []).map(x => String(x == null ? '' : x).trim());
+      sv = vcheck(v.slice(1).map(r => { const o = {}; hd.forEach((k, i) => { o[k] = r[i]; }); return o; })); } catch (e) { sv = null; }
+    let dv = null, vbuf = null, sheetsLeft = 0, waited = 0;
+    const T_END = Date.now() + PUSH_SAVE_WAIT_MS;
+    for (let n = 0; ; n++) {
+      pmProg(PM_STEPS.length - 1, 'act', n ? 'SharePoint 파일 저장을 기다리는 중… ' + waited + '초' : '파일을 다시 내려받아 대조하는 중…');
+      const t1 = await token();
+      const vr = await fetch(P.base + '/root:/' + EMP_FILE + ':/content', { headers: { Authorization: 'Bearer ' + t1 }, cache: 'no-store' });
+      if (vr.ok) { const b = await vr.arrayBuffer(); const vwb = XLSX.read(b, { type: 'array' });
+        dv = vcheck(XLSX.utils.sheet_to_json(vwb.Sheets[vwb.SheetNames[0]], { defval: '' })); vbuf = b; sheetsLeft = vwb.SheetNames.length; }
+      if ((dv && dv.ok) || Date.now() >= T_END) break;
+      await new Promise(r => setTimeout(r, PUSH_SAVE_POLL_MS)); waited = Math.max(1, Math.ceil((PUSH_SAVE_WAIT_MS - (T_END - Date.now())) / 1000));
+    }
+    if (!dv) throw new Error('확인용으로 다시 읽지 못했습니다 — 반영 자체는 끝났습니다. 잠시 뒤 「STK-DB 명부와 비교」 로 확인해 주세요');
+    const lag = !dv.ok && !!(sv && sv.ok);             // 시트는 맞고 파일 저장만 늦음
+    const got = { size: dv.n }, missNow = dv.miss, extraNow = dv.extra, offNow = dv.off;
 
-    logAction('STK-DB 반영', { file: EMP_FILE, sheet: P.sheet.name, rows: ROWS.length,
+    logAction('STK-DB 반영', { file: EMP_FILE, sheet: P.sheet.name, rows: ROWS.length, verify: dv.ok ? 'file ok' + (waited ? ' (' + waited + 's)' : '') : lag ? 'sheet ok · file save pending' : 'mismatch',
       added: P.nw.length, changed: P.chg.length, removed: P.gone.length, backup: backupPath,
       mirror: vlDone ? (vlDone.err ? '실패: ' + vlDone.err : P.vl.sheet.name + ' ' + vlDone.rows + '줄') : '건드리지 않음' });
 
@@ -1330,21 +1354,24 @@ async function pushRun() {
     document.getElementById('pm-cancel').disabled = false;
     document.getElementById('pm-cancel').textContent = '닫기';
     document.getElementById('pm-note').textContent = '';
-    const bad = missNow.length || extraNow.length;
-    document.getElementById('pm-sub').textContent = bad ? '반영했지만 대조에서 어긋난 것이 있습니다' : '반영을 마쳤습니다';
+    const bad = !dv.ok && !lag;
+    document.getElementById('pm-sub').textContent = bad ? '반영했지만 대조에서 어긋난 것이 있습니다' : lag ? '반영했습니다 — 파일 저장 대기 중' : '반영을 마쳤습니다';
     document.getElementById('pm-body').innerHTML =
-      '<div class="pm-box ' + (bad ? 'pm-warn' : 'pm-ok') + '"><b>' + (bad ? '확인이 필요합니다.' : 'employee_search.xlsx 에 ' + ROWS.length + '명을 넣었습니다.') + '</b><br>' +
-      '신규 ' + P.nw.length + ' · 바뀜 ' + P.chg.length + ' · 빠짐 ' + P.gone.length + ' · 지금 파일에서 다시 읽은 인원 ' + got.size + '명 · 시트 ' + sheetsLeft + '개' +
+      '<div class="pm-box ' + (bad || lag ? 'pm-warn' : 'pm-ok') + '"><b>' + (bad ? '확인이 필요합니다.' : lag ? 'Excel 시트에는 ' + ROWS.length + '명이 그대로 들어갔습니다(칸 단위 일치).' : 'employee_search.xlsx 에 ' + ROWS.length + '명을 넣었습니다.') + '</b><br>' +
+      '신규 ' + P.nw.length + ' · 바뀜 ' + P.chg.length + ' · 빠짐 ' + P.gone.length + ' · 파일에서 다시 읽은 인원 ' + got.size + '명 · 시트 ' + sheetsLeft + '개' + (waited ? ' · 저장 대기 ' + waited + '초' : '') +
+      (lag ? '<br>다만 SharePoint 파일 저장이 ' + Math.round(PUSH_SAVE_WAIT_MS / 1000) + '초 안에 끝나지 않아, 내려받은 파일은 아직 예전 내용입니다. 보통 1~2분 안에 저장됩니다 — 잠시 뒤 <b>「STK-DB 명부와 비교」</b> 로 확인해 주세요. <b>다시 반영할 필요는 없습니다.</b>' : '') +
       (bad ? '<br>안 들어간 사람 ' + missNow.length + '명' + (missNow.length ? '(' + esc(missNow.slice(0, 5).join(', ')) + ')' : '') +
         ' · 남아 있는 사람 ' + extraNow.length + '명' + (extraNow.length ? '(' + esc(extraNow.slice(0, 5).join(', ')) + ')' : '') +
+        ' · 값이 다른 사람 ' + offNow.length + '명' + (offNow.length ? '(' + esc(offNow.slice(0, 5).join(', ')) + ')' : '') +
+        '<br>Excel 시트 기준: ' + (sv ? (sv.ok ? '일치' : '어긋남 ' + (sv.miss.length + sv.extra.length + sv.off.length) + '명') : '읽지 못함') +
         '<br>Backup 폴더의 <b>' + esc(backupPath) + '</b> 로 되돌릴 수 있습니다.' : '') + '</div>' +
       (vlDone ? '<div class="pm-box ' + (vlDone.err ? 'pm-warn' : 'pm-ok') + '">거울 시트 <b>' + esc(P.vl.sheet.name) + '</b> — ' +
         (vlDone.err ? '다시 깔지 못했습니다(' + esc(vlDone.err) + '). 첫 시트 반영은 끝났고, 이 시트는 APS 가 읽지 않습니다.'
           : vlDone.rows + '줄을 <code>=' + esc(P.vl.ref) + '!' + vlDone.emailCol + '/' + vlDone.nameCol + '</code> 수식으로 다시 깔았습니다' +
             (vlDone.cleared ? ' · 남은 ' + vlDone.cleared + '줄은 비웠습니다' : '') + (P.vl.refErr ? ' · #REF! ' + P.vl.refErr + '칸도 함께 풀렸습니다' : '')) + '</div>' : '') +
       '<div class="pm-meta">백업 <b>' + esc(backupPath) + '</b><br>APS · GW · IT · ACC 등은 다음에 화면을 열 때(또는 새로고침할 때) 바뀐 명부를 읽습니다.</div>';
-    try { applyCompare('STK-DB employee_search.xlsx (반영 직후)', vbuf); } catch (e) {}
-    return { ok: !bad, mismatch: !!bad, backup: backupPath, read: got.size };
+    if (!lag) { try { applyCompare('STK-DB employee_search.xlsx (반영 직후)', vbuf); } catch (e) {} }   // 낡은 파일로 비교 표를 그리지 않는다
+    return { ok: !bad, mismatch: !!bad, lag, backup: backupPath, read: got.size };
   } catch (e) {
     await closeSes();
     _pushBusy = false;
@@ -1764,7 +1791,7 @@ async function autoApply(key, n, tot) {
     if (!P.nw.length && !P.chg.length && !vlFix) { pushClose(); return Object.assign({ result: 'same' }, cnt); }
     if (_flexSeq !== seq || ROWS !== rowsRef || _push !== P) return Object.assign({ result: 'hold', reason: '쓰기 직전에 목록이 바뀌어 반영하지 않음' }, cnt);
     const r = await pushRun();
-    if (r && r.ok) return Object.assign({ result: 'applied', backup: r.backup }, cnt);
+    if (r && r.ok) return Object.assign({ result: 'applied', backup: r.backup }, r.lag ? { reason: '시트 반영 완료 · SharePoint 파일 저장 대기(보통 1~2분)' } : {}, cnt);
     return Object.assign({ result: 'fail', reason: (r && (r.err || (r.mismatch ? '반영 뒤 다시 읽은 명단이 맞지 않음' : ''))) || '반영 실패', backup: r && r.backup }, cnt);
   } finally { _silentOnly = false; _autoLabel = ''; }
 }
