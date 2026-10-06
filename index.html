@@ -88,6 +88,7 @@ textarea:focus,select:focus{outline:2px solid #bfdbfe;outline-offset:0;border-co
 .team:last-child{border-bottom:0}
 .team .n{color:var(--ink);line-height:1.35;word-break:keep-all}
 .team .n .lead{color:var(--mute);font-size:.7rem;margin-left:4px}
+.team .n .lead.nolead{color:var(--warn);font-weight:600}
 .team .c{font-size:.7rem;color:#9ca3af;white-space:nowrap}
 .team select{width:140px;height:28px;border:1px solid var(--line2);border-radius:6px;padding:0 8px;font-size:.74rem;background:#fff;color:var(--ink)}
 .dept.unk .team select{border-color:#e0b400}
@@ -901,7 +902,7 @@ function renderMap() {
     const n = list.reduce((x, t) => x + teams[t], 0);
     return '<div class="dept' + (d ? '' : ' unk') + '"><div class="dept-h"><span class="dot"></span>' + (d ? esc(d) : '미지정 — 본부를 골라 주세요') +
       '<span class="c">' + list.length + '팀 · ' + n + '명' + (d && heads[d] ? ' · 본부장 ' + esc(heads[d]) : '') + '</span></div>' +
-      list.map(t => '<div class="team"><span class="n" title="' + esc(t) + '">' + esc(t) + (heads[t] ? '<span class="lead">팀장 ' + esc(heads[t]) + '</span>' : '') + '</span><span class="c">' + teams[t] + '명</span>' + sel(t) + '</div>').join('') + '</div>';
+      list.map(t => '<div class="team"><span class="n" title="' + esc(t) + '">' + esc(t) + (heads[t] ? '<span class="lead">팀장 ' + esc(heads[t]) + '</span>' : '<span class="lead nolead" title="Flex 에 이 팀의 팀장(조직장)이 지정돼 있지 않습니다 — 팀원의 Boss 는 본부장으로 넣습니다">팀장 없음</span>') + '</span><span class="c">' + teams[t] + '명</span>' + sel(t) + '</div>').join('') + '</div>';
   }).join('');
   const unk = (groups[''] || []).length, nd = Object.keys(groups).filter(d => d).length;
   document.getElementById('map-sum').innerHTML = '<span class="sum">본부 <b>' + nd + '</b></span><span class="sum">팀 <b>' + names.length + '</b></span><span class="sum' + (unk ? ' warn' : '') + '">미지정 <b>' + unk + '</b></span>';
@@ -1100,6 +1101,7 @@ async function vlookupRepair(P, SH) {
 }
 
 function pmShow() { document.getElementById('push-modal').classList.add('show'); }
+function pmAckSync() { const go = document.getElementById('pm-go'); if (go) go.disabled = [...document.querySelectorAll('#push-modal .pm-ackc')].some(c => !c.checked); }
 function pushClose() { if (_pushBusy) return; document.getElementById('push-modal').classList.remove('show'); }
 function pmSet(sub, html, note, goText) {
   document.getElementById('pm-sub').textContent = sub;
@@ -1142,8 +1144,17 @@ async function pushOpen() {
     const stop = [];
     const miss = EMP_KEYCOLS.filter(c => headers.indexOf(c) < 0);
     if (miss.length) stop.push('지금 파일의 첫 시트(<b>' + esc(sheet.name) + '</b>)에 <b>' + esc(miss.join(' · ')) + '</b> 열이 없습니다 — 명부 파일이 맞는지 확인해 주세요.');
-    const warnRows = ROWS.filter(r => r._warn);
-    if (warnRows.length) stop.push('「확인 필요」 가 <b>' + warnRows.length + '건</b> 남아 있습니다 (매핑 없음 · 팀장 없음). 2번 카드에서 본부를 지정한 뒤 다시 눌러 주세요.');
+    /* 10-06: 「확인 필요」 를 둘로 나눈다.
+       · 매핑 없음 — 본부(Department)를 모른다. 2번 카드에서 고칠 수 있으므로 멈춘다.
+       · 팀장 없음 — Flex 에 팀장(조직장)이 비어 있다(퇴사 · 공석). HFS 에서 고칠 것이 없고, 규칙대로 Boss = 본부장(본부도 없으면 RD)으로
+         채워지므로 멈추지 않고 미리보기에서 「확인했습니다」 를 받는다. 예전엔 둘을 한 문장으로 막아 「2번 카드에서 할 게 없는데」 막혔다.
+       · Boss 자체가 비면('-') 결재선이 끊기므로 멈춘다. */
+    const unmapped = ROWS.filter(r => r._warn === '매핑 없음');
+    if (unmapped.length) stop.push('본부(Department)가 정해지지 않은 팀이 있습니다: <b>' + esc([...new Set(unmapped.map(r => r.Team))].join(' · ')) + '</b> (' + unmapped.length + '명). 2번 카드 「미지정」 칸에서 본부를 고른 뒤 다시 눌러 주세요.');
+    const noBoss = ROWS.filter(r => r._kind === 'st' && (!r.Boss || r.Boss === '-'));
+    if (noBoss.length) stop.push('Boss 를 정할 수 없는 사람이 <b>' + noBoss.length + '명</b> 있습니다(팀장 · 본부장 · RD 모두 없음): ' + esc(noBoss.slice(0, 5).map(r => r.EngName).join(', ')));
+    const otherWarn = ROWS.filter(r => r._warn && r._warn !== '매핑 없음' && r._warn !== '팀장 없음');
+    if (otherWarn.length) stop.push('「확인 필요」 가 <b>' + otherWarn.length + '건</b> 남아 있습니다 — 3번 표의 노란 줄을 확인해 주세요.');
     if (ROWS.length < EMP_MIN_ROWS) stop.push('넣을 사람이 <b>' + ROWS.length + '명</b> 뿐입니다 — 잘못 읽은 것으로 보고 멈춥니다.');
     const seen = {}, dup = [];
     ROWS.forEach(r => { const e = String(r.EMail || '').toLowerCase(); if (seen[e]) { if (dup.indexOf(e) < 0) dup.push(e); } seen[e] = 1; });
@@ -1173,10 +1184,12 @@ async function pushOpen() {
 
     // 사람이 많이 빠지면 한 번 더 묻는다(휴직 · 계약직 체크를 끈 채로 누른 경우가 대부분이다)
     const offLoa = !document.getElementById('opt-loa').checked, offExt = !document.getElementById('opt-ext').checked;
+    const noLead = ROWS.filter(r => r._warn === '팀장 없음');
+    const noLeadTeams = [...new Set(noLead.map(r => r.Team))].map(t => { const m = noLead.filter(r => r.Team === t); return { team: t, n: m.length, boss: m[0].Boss, boss2: m[0]['Boss of Boss'] }; });
     const risky = gone.length > 5 || (oldRows.length && gone.length > oldRows.length * 0.2) || offLoa || offExt;
     const backupPath = EMP_BACKUP_DIR + '/employee_search_' + kstStamp() + '.xlsx';   // 한 번만 정해 미리보기와 실제가 같게 한다
     const sig = ROWS.map(r => r.EMail).join('|');                                      // 미리보기 뒤 결과가 바뀌었는지 보는 표식
-    _push = { drive, base, item, wb, sheet, sUrl, cols, body, used, oldRows, byEmail, nw, chg, gone, risky, vl, backupPath, sig };
+    _push = { drive, base, item, wb, sheet, sUrl, cols, body, used, oldRows, byEmail, nw, chg, gone, risky, noLead, noLeadTeams, vl, backupPath, sig };
 
     // ── 미리보기 ──
     const li = (arr, render) => '<div class="pm-list">' + arr.slice(0, 50).map(render).join('') +
@@ -1214,11 +1227,15 @@ async function pushOpen() {
       '마지막 수정 <b>' + esc(kstOf(item.lastModifiedDateTime)) + '</b> (KST)' +
       ((item.lastModifiedBy && item.lastModifiedBy.user && item.lastModifiedBy.user.displayName) ? ' · <b>' + esc(item.lastModifiedBy.user.displayName) + '</b>' : '') + '<br>' +
       '백업 <b>' + esc(backupPath) + '</b> — 넣기 전에 지금 파일을 그대로 복사해 둡니다</div>';
-    if (risky) H += '<div class="pm-box pm-warn" style="margin-top:12px"><label class="pm-chk"><input type="checkbox" id="pm-ack" onchange="document.getElementById(\'pm-go\').disabled=!this.checked"> 빠지는 ' + gone.length + '명을 확인했습니다. 그대로 반영합니다.</label></div>';
+    if (noLead.length) H += '<div class="pm-box pm-warn" style="margin-top:12px"><b>Flex 에 팀장이 지정되지 않은 팀이 있습니다.</b> 규칙대로 그 팀원의 Boss 를 본부장(본부가 없으면 RD)으로 넣습니다.<br>' +
+      noLeadTeams.map(t => '· <b>' + esc(t.team) + '</b> ' + t.n + '명 → Boss <b>' + esc(t.boss) + '</b> · Boss of Boss <b>' + esc(t.boss2) + '</b>').join('<br>') +
+      '<br>새 팀장이 정해졌다면 Flex 에서 그 팀의 조직장을 지정한 뒤 다시 가져오세요. 공석이 맞다면 그대로 반영해도 됩니다.<br>' +
+      '<label class="pm-chk"><input type="checkbox" class="pm-ackc" onchange="pmAckSync()"> 팀장 없는 팀의 결재선(Boss)을 확인했습니다.</label></div>';
+    if (risky) H += '<div class="pm-box pm-warn" style="margin-top:12px"><label class="pm-chk"><input type="checkbox" id="pm-ack" class="pm-ackc" onchange="pmAckSync()"> 빠지는 ' + gone.length + '명을 확인했습니다. 그대로 반영합니다.</label></div>';
 
     _pushBusy = false;
     pmSet('아래 내용대로 STK-DB 의 명부를 바꿉니다', H, '되돌리려면 Backup 폴더의 파일을 덮어쓰면 됩니다', '반영');
-    if (risky) document.getElementById('pm-go').disabled = true;
+    pmAckSync();   // 확인 체크(빠짐 · 팀장 없음)가 하나라도 있으면 모두 켜야 「반영」 이 눌린다
   } catch (e) {
     pmStop(_pmErrHtml(e), 'error');   // 읽기 실패 — 자동 수집은 「실패」 로 기록(조건 미달 「보류」 와 구분)
   }
@@ -1237,6 +1254,7 @@ function pmProg(i, state, sub) {
 function _pmErrHtml(e) { return '<div class="pm-box pm-bad">명부를 읽지 못했습니다 — <b>' + esc(e.message) + '</b><br>권한(Files.ReadWrite.All) 이나 파일 위치를 확인해 주세요. 아무것도 바꾸지 않았습니다.</div>'; }
 async function pushRun() {
   if (!_push || _pushBusy) return { ok: false, err: '반영 창이 준비되지 않았거나 이미 진행 중입니다' };
+  if (!_silentOnly && [...document.querySelectorAll('#push-modal .pm-ackc')].some(c => !c.checked)) return { ok: false, err: '확인 체크가 남아 있습니다' };   // 버튼 잠금이 풀린 채 불려도 사람 확인 없이 쓰지 않는다
   const P = _push;
   const doVl = !!(P.vl && document.getElementById('pm-vl') && document.getElementById('pm-vl').checked);   // 화면이 바뀌기 전에 체크 상태를 챙긴다
   PM_STEPS = [['백업', '지금 파일을 Backup 폴더로 복사'], ['쓰기', '첫 시트의 칸만 고침']]
@@ -1569,6 +1587,7 @@ window.addEventListener('message', ev => {
                     EngName 바꾸기는 이 브라우저에만 저장되므로, 다른 PC 의 HFS 가 돌면 이름이 조용히 Flex 원래 이름으로 돌아갈 수 있었다)
        (10-05 추가) 바뀜이 한 번에 AUTO_MAX_CHG(5)명을 넘으면         → 보류(조직 개편 · 팀장 표시 오류)
        (10-05 추가) 신규 직원 EngName 이 다른 직원과 같으면           → 보류(Boss 값이 누구인지 모호)
+       (10-06 추가) 팀장 없는 팀이 있으면(Boss 가 본부장으로 올라감)    → 보류(공석이 맞는지 사람이 확인 — 수동은 미리보기 체크로 진행)
        (10-05 추가) 판정 도중 다른 Flex 목록이 들어오면                → 보류(다 받았는지 확인한 목록과 쓰는 목록이 어긋나지 않게)
        (10-05 추가) 사람이 미리보기를 보고 있으면 · 반영 창이 진행 중이면 → 보류(사람 창을 덮지 않는다)
        명부(employee_search) 를 읽지 못하면                           → 실패
@@ -1737,6 +1756,7 @@ async function autoApply(key, n, tot) {
     ROWS.forEach(r => { const k = nm(r.EngName); if (k) nameCnt[k] = (nameCnt[k] || 0) + 1; });
     const dupNew = P.nw.filter(r => nameCnt[nm(r.EngName)] > 1);
     if (dupNew.length) why.push('신규 직원 EngName 이 다른 직원과 같음 ' + dupNew.length + '명(' + dupNew.slice(0, 3).map(r => String(r.EngName)).join(', ') + ' — Boss 값이 누구인지 모호해짐)');
+    if (P.noLead && P.noLead.length) why.push('팀장 없는 팀 ' + P.noLeadTeams.map(t => t.team + '(' + t.n + '명 → Boss ' + t.boss + ')').join(', ') + ' — 공석이 맞는지 확인');
     if (P.chg.length > AUTO_MAX_CHG) why.push('바뀜 ' + P.chg.length + '명(한 번에 ' + AUTO_MAX_CHG + '명 넘게 바뀌면 사람이 확인)');
     if (!document.getElementById('opt-loa').checked || !document.getElementById('opt-ext').checked) why.push('휴직자 · 계약직 포함 체크가 꺼져 있음(이 창에서 그대로 반영하면 휴직자 · 계약직이 명부에서 빠집니다 — 체크를 켠 뒤 「지금 한 번」 으로 다시)');
     if (!why.length && P.risky) why.push('미리보기에서 확인이 필요한 변경');   // risky 의 다른 이유가 생겨도 놓치지 않게
