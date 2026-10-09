@@ -262,6 +262,109 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
 ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #94A3B8; background-clip: padding-box; }
 </style>
+<style id="aps-mobile">
+/* APS 모바일(10-09 · aps-mobile) — 767px 이하 전용. 웹 화면 무변경 */
+/* HFS: APS 헤더가 아닌 자체 남색 머리띠(.topbar) — 같은 결로 한 줄 정리. 기존 640/900px 규칙은 그대로 두고 보완만.
+   결과 표(#tbl)는 table-layout:fixed + 열 % 라 좁은 폭에서 글자가 세로로 쪼개짐 → 표에 최소 폭을 주고 .tbl 상자만 가로 스크롤. */
+@media (max-width: 767px) {
+  /* ── 머리띠 · 바깥 여백 ── */
+  .topbar-in { padding: 12px 12px; gap: 10px; }
+  .brand { flex: 1 1 auto; }
+  .brand > div:last-child { min-width: 0; }
+  .brand-ico { width: 32px; height: 32px; }
+  .brand-t { font-size: .94rem; }
+  .brand-s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-space { display: none; }
+  .who { flex: 1 1 100%; flex-wrap: nowrap; justify-content: space-between; min-width: 0; }
+  .who .chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .who .btn-ghost { flex: none; height: 32px; }
+  .privacy { padding: 8px 12px 0; align-items: flex-start; line-height: 1.5; }
+  .privacy svg { margin-top: 2px; }
+  .wrap { padding: 10px 12px 48px; }
+  .card { padding: 14px; }
+
+  /* 소제목 줄 — 오른쪽 요약 · 단추가 제목을 세로로 쪼개지 않게 아래 줄로 */
+  .sec { flex-wrap: wrap; row-gap: 6px; }
+  .sec .r { margin-left: 0; flex: 1 1 100%; justify-content: flex-start; }
+
+  /* ── 단추 · 탭 터치 영역 ── */
+  .btn { height: 38px; }
+  .btn.sm { height: 34px; }
+  .seg { display: flex; width: 100%; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+  .seg::-webkit-scrollbar { display: none; }
+  .seg button { flex: 1 0 auto; min-height: 40px; white-space: nowrap; }
+  .tog { min-height: 34px; }
+
+  /* ── 1. 가져오기 ── */
+  .auto-bar { padding: 10px 12px; }
+  .auto-bar .ab-l { flex: 1 1 100%; }
+  .ab-r { width: 100%; }
+  .ab-next { flex: 1 1 100%; white-space: normal; }
+  .ab-row { gap: 0; padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
+  .ab-row:last-child { border-bottom: 0; }
+  .step { padding: 14px; }
+  .step .h { flex-wrap: wrap; }
+  .drop { padding: 18px 14px; }
+  .row .btn { flex: 1 1 0; justify-content: center; }
+  textarea:not([readonly]) { font-size: 16px; }
+
+  /* ── 2. 매핑 ── */
+  .dept-grid { grid-template-columns: 1fr; }
+  .dept-h { flex-wrap: wrap; row-gap: 2px; }
+  .dept-h .c { white-space: normal; text-align: right; }
+  .team { padding: 8px 12px; gap: 8px; grid-template-columns: minmax(0, 1fr) 136px; }
+  .team select { width: 136px; height: 38px; font-size: 16px; }
+  .ovr-add input { height: 40px; font-size: 16px; }
+  .ovr-add .btn { width: 100%; justify-content: center; }
+  .ovr-row { padding: 8px 12px; }
+  .rule-grid { grid-template-columns: 1fr; gap: 0; }
+  .rule-grid dd { margin-bottom: 6px; }
+  details.more summary { min-height: 34px; }
+
+  /* ── 3. 결과 — 숫자 상자 3열 격자, 도구 줄 2열 단추 ── */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .stat { min-width: 0; padding: 9px 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stat:nth-child(3n) { border-right: 0; }
+  .stat:nth-last-child(-n+3) { border-bottom: 0; }
+  .toolbar { gap: 6px 8px; }
+  .toolbar > span[style*="flex:1"] { flex: 1 1 100% !important; height: 0; }
+  .toolbar .btn { flex: 1 1 calc(50% - 4px); justify-content: center; padding: 0 8px; }
+  .status { display: flex; }
+  .status:empty { display: none; }
+
+  /* 결과 표 — 표 상자만 가로 스크롤, 열 비율은 기존 그대로 */
+  .tbl { max-height: 70vh; -webkit-overflow-scrolling: touch; }
+  #tbl { min-width: 720px; }
+  #tbl:has(th.c-diff) { min-width: 900px; }
+
+  /* ── 로그인 · 접근 거부 ── */
+  #login-screen { padding: 16px 16px 96px; }
+  .login-box { width: 100%; max-width: 320px; padding: 28px 22px; }
+  #btn-login { min-height: 44px; }
+  .deny-box { width: 100%; padding: 28px 20px; }
+  .page-footer { flex-direction: column; justify-content: center; gap: 2px; padding: 8px 16px; text-align: center; font-size: 10px; line-height: 1.5; }
+
+  /* ── 팝업 — 좌우 10px, 높이 90%, 안쪽 스크롤 ── */
+  .fm { width: calc(100vw - 20px); max-width: none; max-height: 90vh; overflow: auto; }
+  .fm-h, .pm-h { padding: 16px 16px 12px; }
+  .fm-steps { padding: 4px 16px 6px; }
+  #fm-log { margin-left: 16px !important; margin-right: 16px !important; }
+  .fm-f, .pm-f { flex-wrap: wrap; padding: 12px 16px 14px; gap: 8px; }
+  .fm-f > span:first-child, .pm-f > span:first-child { flex: 1 1 100%; }
+  .fm-f .sp, .pm-f .sp { display: none; }
+  .fm-f .btn, .pm-f .btn { flex: 1 1 0; justify-content: center; height: 40px; border-radius: 20px; }
+  #push-modal { padding: 10px; }
+  .pm { max-height: 90vh; }
+  .pm-b { padding: 14px 16px; }
+  .pm-grid { display: grid; grid-template-columns: 1fr 1fr; }
+  .pm-k { min-width: 0; padding: 9px 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .pm-k:nth-child(2n) { border-right: 0; }
+  .pm-k:nth-last-child(-n+2) { border-bottom: 0; }
+  .pm-row { gap: 2px; }
+  .pm-row .em { display: block; margin-left: 0; word-break: break-all; }
+  .pm-meta { word-break: break-all; }
+}
+</style>
 </head>
 <body>
 <!-- 로그인(10-01) — 다른 APS 시스템과 같은 Entra 앱 · M365 계정. system_config_final.xlsx 의 ADMIN_SP_1 에 적힌 사람만 들어온다 -->
