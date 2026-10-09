@@ -266,7 +266,11 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
 /* APS 모바일(10-09 · aps-mobile) — 767px 이하 전용. 웹 화면 무변경 */
 /* HFS: APS 헤더가 아닌 자체 남색 머리띠(.topbar) — 같은 결로 한 줄 정리. 기존 640/900px 규칙은 그대로 두고 보완만.
    결과 표(#tbl)는 table-layout:fixed + 열 % 라 좁은 폭에서 글자가 세로로 쪼개짐 → 표에 최소 폭을 주고 .tbl 상자만 가로 스크롤. */
-@media (max-width: 767px) {
+@media screen and (max-width: 767px) {
+  /* ── 2차(10-10) iPhone · Galaxy 방어 — 글자 자동 확대 끔, 입력 · 단추가 부모 폭을 넘지 않게. 이 화면에는 날짜 입력칸이 없어 날짜 규칙은 넣지 않음 ── */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  input, select, textarea, button { max-width: 100%; box-sizing: border-box; }
+
   /* ── 머리띠 · 바깥 여백 ── */
   .topbar-in { padding: 12px 12px; gap: 10px; }
   .brand { flex: 1 1 auto; }
@@ -297,7 +301,8 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
 
   /* ── 1. 가져오기 ── */
   .auto-bar { padding: 10px 12px; }
-  .auto-bar .ab-l { flex: 1 1 100%; }
+  .auto-bar .ab-l { flex: 1 1 100%; align-items: flex-start; }
+  .ab-dot { margin-top: 4px; }   /* 상태 글이 여러 줄일 때 점이 가운데로 떠 있지 않게 */
   .ab-r { width: 100%; }
   .ab-next { flex: 1 1 100%; white-space: normal; }
   .ab-row { gap: 0; padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
@@ -312,11 +317,19 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
   .dept-grid { grid-template-columns: 1fr; }
   .dept-h { flex-wrap: wrap; row-gap: 2px; }
   .dept-h .c { white-space: normal; text-align: right; }
-  .team { padding: 8px 12px; gap: 8px; grid-template-columns: minmax(0, 1fr) 136px; }
-  .team select { width: 136px; height: 38px; font-size: 16px; }
-  .ovr-add input { height: 40px; font-size: 16px; }
+  /* 팀 줄: 이름 · (641px 이상이면 인원) · 선택 한 줄 — 641~767px 에서 선택 칸이 다음 줄로 밀리던 것(2차) */
+  .team { padding: 8px 12px; gap: 8px; grid-template-columns: minmax(0, 1fr) auto 136px; }
+  .team select { grid-column: 3; width: 136px; height: 38px; font-size: 16px; }
+  /* EngName 바꾸기: 641~767px 에서도 1열(긴 메일이 옆 칸을 덮던 것) · 입력과 단추 같은 높이 40px */
+  .ovr-add { grid-template-columns: minmax(0, 1fr); }
+  .ovr-add input, .ovr-add .btn { height: 40px; font-size: 16px; }
   .ovr-add .btn { width: 100%; justify-content: center; }
-  .ovr-row { padding: 8px 12px; }
+  /* 바뀐 이름 줄: 위 — 사람(이름 · 메일) + ✕, 아래 — 옛 이름 → 새 이름 */
+  .ovr-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 8px 12px; }
+  .ovr-row > span:first-child { flex: 1 1 calc(100% - 44px); min-width: 0; }
+  .ovr-row > span { min-width: 0; overflow-wrap: anywhere; }
+  .ovr-row > span:not(:first-child) { order: 2; }
+  .ovr-row > .x { order: 1; flex: none; min-width: 32px; min-height: 32px; }
   .rule-grid { grid-template-columns: 1fr; gap: 0; }
   .rule-grid dd { margin-bottom: 6px; }
   details.more summary { min-height: 34px; }
