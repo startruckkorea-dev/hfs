@@ -1,7 +1,10 @@
 (async () => {
-var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin, TPL_KEY = 'hfs.collect.tpl.v1';
+var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin, TPL_KEY = 'hfs.collect.tpl.v2';
+/* v13(10-10) — 요청 틀(TPL_KEY)에 인증 헤더 원문을 남기지 않는다. 예전 틀(v1)은 묶인 헤더도 원문을 함께 저장했으므로 지운다. */
+try { localStorage.removeItem('hfs.collect.tpl.v1'); } catch (e) {}
 if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-var V = 12;
+var V = 13;
+var LDR = window.__hfsLdr || null;   /* 북마크 로더가 남긴 정보 { v: 로더 판, pin: 고정한 수집기 판, ok: 해시 검증 통과 } — 없으면 예전 북마크. HFS 가 다시 등록 안내에 쓴다 */
 var main = async function (ctx) {
 ctx = ctx || {};
 var AUTO = !!ctx.auto, KEY = String(ctx.key || '');
@@ -18,7 +21,7 @@ window.__hfsHome = hfsWin;
 var diag = [], lastProg = null, finished = false, onAck = null;
 var log = function (t) { diag.push(new Date().toTimeString().slice(0, 8) + ' ' + t); };
 var RID = Math.random().toString(36).slice(2);
-var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, rid: RID, auto: AUTO, key: KEY, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
+var prog = function (stage, extra) { lastProg = Object.assign({ type: 'hfs-flex-progress', stage: stage, v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY, diag: diag.join('\n') }, extra || {}); try { if (!hfsWin.closed) hfsWin.postMessage(lastProg, ORG); } catch (e) {} };
 var beat = setInterval(function () { if (finished || !lastProg) return; if (hfsWin.closed) { clearInterval(beat); window.__hfsRun = null; return; } try { hfsWin.postMessage(lastProg, ORG); } catch (e) {} }, 1000);
 var done = function () { finished = true; clearInterval(beat); window.__hfsRun = null; if (onAck) { window.removeEventListener('message', onAck); onAck = null; } };
 var fail = function (text) { log('실패: ' + text); prog('error', { text: text, diag: diag.join('\n') }); done(); };
@@ -44,14 +47,22 @@ try { var o = JSON.parse(v); (function walk(x, path) { if (!x || typeof x !== 'o
 });
 return out;
 };
+/* v13: 비밀로 볼 헤더 — 이름(authorization · cookie · token · session · csrf …) 또는 값 모양(Bearer … · JWT a.b.c).
+   길이만으로는 보지 않는다 — Flex 앱은 sentry-trace · baggage 처럼 길지만 비밀이 아닌 헤더를 보낸다(그것까지 막으면 틀이 저장되지 않아 자동 수집이 느려진다). */
+var SECRET_NAME = /auth|token|cookie|session|secret|passw|api-?key|signature|csrf|xsrf|bearer|credential/i;
+var secretish = function (name, v) { v = String(v == null ? '' : v); return SECRET_NAME.test(String(name || '')) || /^bearer\s/i.test(v) || /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/.test(v); };
+/* 헤더를 저장소 값에 묶는다. 묶인 헤더는 위치(저장소 · 키 · 경로 · 앞뒤 짧은 글자)만 남기고 값은 남기지 않는다.
+   묶이지 않은 헤더는 비밀이 아닐 때만 값을 남긴다. 묶이지 않는 비밀 헤더가 하나라도 있으면 { bad: [이름] } — 틀을 저장하지 않는다. */
 var bindHeaders = function (headers) {
-var vals = storeVals(), out = {};
-Object.keys(headers).forEach(function (h) {
+var vals = storeVals(), out = {}, bad = [];
+Object.keys(headers || {}).forEach(function (h) {
 var v = String(headers[h]), src = null;
 if (v.length >= 20) { for (var i = 0; i < vals.length; i++) { var c = vals[i]; var at = v.indexOf(c.val); if (at >= 0) { src = { store: c.store, key: c.key, path: c.path, prefix: v.slice(0, at), suffix: v.slice(at + c.val.length) }; break; } } }
-out[h] = { value: v, src: src };
+if (src && src.prefix.length < 20 && src.suffix.length < 20) out[h] = { src: src };
+else if (secretish(h, v)) bad.push(h);
+else out[h] = { value: v };
 });
-return out;
+return bad.length ? { bad: bad } : { headers: out };
 };
 var rebuildHeaders = function (bound) {
 var out = {};
@@ -68,9 +79,12 @@ return out;
 var loadTpl = function () { try { var t = JSON.parse(localStorage.getItem(TPL_KEY) || 'null'); if (!t || !t.url || !t.slot) return null; var h = rebuildHeaders(t.headers || {}); if (!h) return null;
 var f = null; if (t.first) { var fh = rebuildHeaders(t.first.headers || {}); if (!fh) return null; f = { url: t.first.url, method: t.first.method, headers: fh, body: t.first.body }; }
 return { url: t.url, method: t.method, headers: h, body: t.body, slot: t.slot, first: f }; } catch (e) { return null; } };
-var saveTpl = function (T, slot) { try { var o = { url: T.url, method: T.method, headers: bindHeaders(T.headers), body: T.body, slot: slot, at: Date.now() };
-if (T.first) o.first = { url: T.first.url, method: T.first.method, headers: bindHeaders(T.first.headers), body: T.first.body };
-localStorage.setItem(TPL_KEY, JSON.stringify(o)); } catch (e) {} };
+var saveTpl = function (T, slot) { try { var hb = bindHeaders(T.headers), fb = T.first ? bindHeaders(T.first.headers) : null;
+var bad = (hb.bad || []).concat(fb && fb.bad || []).filter(function (x, i, a) { return a.indexOf(x) === i; });
+if (bad.length) { localStorage.removeItem(TPL_KEY); log('틀 저장 안 함 — 저장소와 연결되지 않는 인증 헤더(' + bad.join(',') + ') · 다음에도 화면에서 잡는다'); return false; }
+var o = { url: T.url, method: T.method, headers: hb.headers, body: T.body, slot: slot, at: Date.now(), v: V };
+if (T.first) o.first = { url: T.first.url, method: T.first.method, headers: fb.headers, body: T.first.body };
+localStorage.setItem(TPL_KEY, JSON.stringify(o)); return true; } catch (e) { return false; } };
 var dropTpl = function () { try { localStorage.removeItem(TPL_KEY); } catch (e) {} };
 var setPath = function (o, path, v) { var cur = o; for (var i = 0; i < path.length - 1; i++) { if (cur[path[i]] == null || typeof cur[path[i]] !== 'object') cur[path[i]] = {}; cur = cur[path[i]]; } cur[path[path.length - 1]] = v; };
 var place = function (T, c, val) {
@@ -125,7 +139,7 @@ var L = learn(cs); if (!L) { log('자리 배우기(' + why + '): 다음 페이�
 log('자리 배우기(' + why + '): ' + slotName(L.slot) + (L.T.first ? ' · 첫 페이지 요청 따로' : ''));
 var keepU = users, keepT = total, good = false;
 try { good = await readAll(L.T); } catch (e) { log('배운 자리로 다시 읽기 실패: ' + e.message); }
-if (good) { saveTpl(L.T, L.slot); log('틀 저장 — 다음부터는 화면 없이 바로 읽는다'); return true; }
+if (good) { if (saveTpl(L.T, L.slot)) log('틀 저장 — 다음부터는 화면 없이 바로 읽는다'); return true; }
 users = keepU; total = keepT; return false;
 };
 var hdrs = function (src) { var h = {}; if (src) { if (Array.isArray(src)) src.forEach(function (kv) { h[kv[0]] = kv[1]; }); else if (typeof src.forEach === 'function') src.forEach(function (v, k) { h[k] = v; }); else Object.assign(h, src); } return h; };
@@ -254,7 +268,7 @@ closeFrame();
 }
 if (AUTO && !ok) { fail('자동 수집: 저장된 연결로 끝까지 읽지 못했습니다(' + users.size + (total ? '/' + total : '') + '명). Flex 로그인이 풀렸거나 화면이 바뀌었을 수 있습니다 — Flex 탭에서 「HFS 수집」 을 한 번 다시 눌러 주세요.'); return; }
 if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
-var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, rid: RID, auto: AUTO, key: KEY }, acked = false;
+var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY }, acked = false;
 onAck = function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } };
 window.addEventListener('message', onAck);
 log('보냄: ' + users.size + '명' + (total ? ' / ' + total : ''));
@@ -268,16 +282,16 @@ if (!acked) { done(); }
 };
 var R = window.__hfsResident;
 if (!R) {
-R = window.__hfsResident = { main: main, v: V };
+R = window.__hfsResident = { main: main, v: V, ldr: LDR, tplKey: TPL_KEY };
 window.addEventListener('message', function (ev) {
 if (ev.origin !== ORG || !ev.data || ev.data.type !== 'hfs-collect-request') return;
 if (!window.__hfsHome || ev.source !== window.__hfsHome) return;
 window.__hfsResident.main({ auto: true, win: ev.source, key: ev.data.key });
 });
-var hello = function () { var w = window.__hfsHome; if (!w || w.closed) return; try { w.postMessage({ type: 'hfs-flex-hello', v: window.__hfsResident.v, tpl: !!localStorage.getItem(TPL_KEY), busy: !!window.__hfsRun, at: Date.now() }, ORG); } catch (e) {} };
+var hello = function () { var w = window.__hfsHome; if (!w || w.closed) return; try { w.postMessage({ type: 'hfs-flex-hello', v: window.__hfsResident.v, ldr: window.__hfsResident.ldr || null, tpl: !!localStorage.getItem(window.__hfsResident.tplKey || TPL_KEY), busy: !!window.__hfsRun, at: Date.now() }, ORG); } catch (e) {} };
 R.hello = hello;
 setInterval(hello, 20000);
-} else { R.main = main; R.v = V; }
+} else { R.main = main; R.v = V; R.ldr = LDR; R.tplKey = TPL_KEY; }
 await main({ auto: false });
 try { R.hello(); } catch (e) {}
 })();
