@@ -995,6 +995,20 @@ function engName(b, ovr) {
   if (dn && !/\s/.test(dn) && /^[A-Za-z]{3,}$/.test(dn)) return cap(dn) + (last ? ' ' + last : '');   // 영문 닉네임(Jimmy · Gina …) + 성
   return (first + ' ' + last).trim() || cap(dn) || b.name;
 }
+/* 10-14: 고정 조직도 3열 — employee_search 의 I·J·K.
+   Boss · Boss of Boss(G·H)는 「신청자 기준 상대값」 이라(팀장 → 본부장/RD) 결재 시스템이 팀장 단계 · 부서장 단계로 그대로 읽으면
+   팀장이 올린 건의 부서장 단계에 RD 가 들어갔다(10-01 Flex 연동의 flexResolve). 그래서 G·H 는 그대로 두고
+   「그 사람이 속한 팀의 팀장 · 본부의 본부장 · RD」 를 따로 적는다(값은 EngName, 없으면 '-').
+     rd(대표)   : -        · -                            · 본인
+     fl(본부장) : -        · 본인                          · 대표
+     tl(팀장)   : 본인     · 그 본부 본부장(단독 팀이면 본인)  · 대표
+     st(팀원)   : 그 팀장(공석이면 -) · 그 본부 본부장(단독 팀이면 그 팀장, 없으면 -) · 대표
+   결재 시스템: 팀장 단계 = Team Manager(없으면 Department Head → RD), 부서장 단계 = Department Head(없으면 RD). */
+const ORG3 = ['Team Manager', 'Department Head', 'RD'];
+// 명부(헤더 · 행)에서 이번에 「처음 채우는」 3열 — 머리글이 없거나, 머리글만 있고 값이 모두 빈 열. 이 열은 「바뀜」 으로 세지 않는다(열 추가 한 번에 전원이 바뀜으로 잡히지 않게)
+function org3New(headers, rows) {
+  return ORG3.filter(c => headers.indexOf(c) < 0 || !(rows || []).some(r => String(r[c] == null ? '' : r[c]).trim()));
+}
 function convert() {
   const ovr = overrides();
   const P = [...USERS.values()].map(u => {
@@ -1027,7 +1041,15 @@ function convert() {
         const dh = deptHead(dept); boss2 = dh ? dh.name : (rd ? rd.name : '-');
       }
     }
-    out.push({ Company: 'STK', Department: dept, Team: team, EngName: p.name, EMail: p.email, WMC_old: '', Boss: boss, 'Boss of Boss': boss2, _kind: kind, _loa: p.loa, _ext: p.ext, _ko: p.ko, _title: p.title, _warn: warn });
+    // 10-14: 고정 조직도 3열 — lead() · deptHead() · headOf 를 그대로 쓴다(위 Boss 계산과 같은 기준)
+    const nmOf = x => x ? x.name : '-';
+    let tmN, dhN;
+    if (kind === 'rd') { tmN = '-'; dhN = '-'; }
+    else if (kind === 'fl') { tmN = '-'; dhN = p.name; }
+    else if (kind === 'tl') { tmN = p.name; dhN = nmOf(deptHead(dept)); }
+    else { tmN = nmOf(headOf[team]); dhN = nmOf(deptHead(dept)); }
+    const rdN = kind === 'rd' ? p.name : nmOf(rd);
+    out.push({ Company: 'STK', Department: dept, Team: team, EngName: p.name, EMail: p.email, WMC_old: '', Boss: boss, 'Boss of Boss': boss2, 'Team Manager': tmN, 'Department Head': dhN, RD: rdN, _kind: kind, _loa: p.loa, _ext: p.ext, _ko: p.ko, _title: p.title, _warn: warn });
   }
   const tOrder = {}; Object.keys(MAP).forEach((k, i) => tOrder[k] = i);
   const dIdx = d => { const i = DEPT_ORDER.indexOf(d); return i < 0 ? 50 : i; };
@@ -1104,22 +1126,24 @@ function build() {
 }
 /* 결과 표 — 한 화면에 들어가게: Company · WMC_old 는 늘 같으니 화면에서는 빼고(Excel 에는 그대로), 메일은 이름 아래 작게, 한글 이름 · 직책 · 알약은 「구분」 열에 */
 function renderTable() {
-  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'];
+  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: I·J·K 고정 조직도
   const cm = CMP ? CMP.byEmail : null;
-  const head = '<tr><th class="c-no">#</th><th>Department</th><th>Team</th><th>이름 · 메일</th><th>Boss</th><th>Boss of Boss</th><th>구분</th>' + (cm ? '<th class="c-diff">기존 대비</th>' : '') + '</tr>';
+  const nc = (CMP && CMP.newCols) || [];   // 10-14: 비교한 파일에 아직 없는 3열은 머리글에 「새 열」 로 표시하고 「기존 대비」 에서 세지 않는다
+  const head = '<tr><th class="c-no">#</th><th>Department</th><th>Team</th><th>이름 · 메일</th><th>Boss</th><th>Boss of Boss</th>' +
+    ORG3.map(c => '<th>' + esc(c) + (cm && nc.indexOf(c) >= 0 ? ' <span class="pill p-new">새 열</span>' : '') + '</th>').join('') + '<th>구분</th>' + (cm ? '<th class="c-diff">기존 대비</th>' : '') + '</tr>';
   const body = ROWS.map((r, i) => {
     const tag = (r._kind === 'rd' || r._kind === 'fl' ? '<span class="pill p-fl">' + (r._kind === 'rd' ? 'RD' : '본부장') + '</span>' : r._kind === 'tl' ? '<span class="pill p-tl">팀장</span>' : '')
       + (r._loa ? '<span class="pill p-loa">휴직</span>' : '') + (r._ext ? '<span class="pill p-ext">계약직</span>' : '') + (r._warn ? '<span class="pill p-chg">' + r._warn + '</span>' : '');
     let diff = '';
-    if (cm) { const o = cm[r.EMail]; if (!o) diff = '<span class="pill p-new">신규</span>'; else { const ch = H.filter(h => h !== 'WMC_old' && String(o[h] || '').trim() !== String(r[h] || '').trim()); diff = ch.length ? ch.map(h => '<div class="dl"><span class="k">' + h + '</span> <span class="chg-old">' + esc(o[h] || '(빈칸)') + '</span> → <span class="chg-new">' + esc(r[h]) + '</span></div>').join('') : '<span class="same">같음</span>'; } }
+    if (cm) { const o = cm[r.EMail]; if (!o) diff = '<span class="pill p-new">신규</span>'; else { const ch = H.filter(h => h !== 'WMC_old' && nc.indexOf(h) < 0 && String(o[h] || '').trim() !== String(r[h] || '').trim()); diff = ch.length ? ch.map(h => '<div class="dl"><span class="k">' + h + '</span> <span class="chg-old">' + esc(o[h] || '(빈칸)') + '</span> → <span class="chg-new">' + esc(r[h]) + '</span></div>').join('') : '<span class="same">같음</span>'; } }
     return '<tr class="' + (r._kind === 'rd' || r._kind === 'fl' ? 'fl lead' : r._kind === 'tl' ? 'lead' : '') + (r._warn ? ' warnrow' : '') + '"><td class="c-no">' + (i + 1) + '</td>' +
       '<td>' + esc(r.Department) + '</td><td class="c-team">' + esc(r.Team) + '</td><td class="c-name">' + esc(r.EngName) + '<span class="sub">' + esc(r.EMail) + '</span></td>' +
-      '<td>' + esc(r.Boss) + '</td><td>' + esc(r['Boss of Boss']) + '</td><td class="c-tag"><span class="ko">' + esc(r._ko) + (r._title ? ' · ' + esc(r._title) : '') + '</span>' + (tag ? '<span class="tags">' + tag + '</span>' : '') + '</td>' +
+      '<td>' + esc(r.Boss) + '</td><td>' + esc(r['Boss of Boss']) + '</td>' + ORG3.map(c => '<td>' + esc(r[c]) + '</td>').join('') + '<td class="c-tag"><span class="ko">' + esc(r._ko) + (r._title ? ' · ' + esc(r._title) : '') + '</span>' + (tag ? '<span class="tags">' + tag + '</span>' : '') + '</td>' +
       (cm ? '<td class="c-diff">' + diff + '</td>' : '') + '</tr>';
   }).join('');
   let tail = '';
-  if (cm) { const gone = Object.keys(cm).filter(e => !ROWS.some(r => r.EMail === e)); tail = gone.map(e => '<tr class="gone"><td></td><td colspan="' + (cm ? 7 : 6) + '">' + esc(cm[e].EngName) + ' <span class="sub-inline">' + esc(e) + '</span> <span class="pill p-del">기존에만 있음 — 새 파일에서 빠짐</span></td></tr>').join(''); }
-  const W = cm ? [3, 9, 16, 20, 10, 10, 15, 17] : [3, 11, 19, 24, 12, 12, 19];   // 열 비율(%) — 비교 열이 있든 없든 표 폭을 고르게 채운다
+  if (cm) { const gone = Object.keys(cm).filter(e => !ROWS.some(r => r.EMail === e)); tail = gone.map(e => '<tr class="gone"><td></td><td colspan="' + (cm ? 10 : 9) + '">' + esc(cm[e].EngName) + ' <span class="sub-inline">' + esc(e) + '</span> <span class="pill p-del">기존에만 있음 — 새 파일에서 빠짐</span></td></tr>').join(''); }
+  const W = cm ? [3, 8, 13, 16, 8, 8, 8, 8, 6, 10, 12] : [3, 9, 15, 19, 9, 9, 9, 9, 6, 12];   // 열 비율(%) — 비교 열이 있든 없든 표 폭을 고르게 채운다(10-14: 3열 추가)
   document.getElementById('tbl').innerHTML = '<colgroup>' + W.map(w => '<col style="width:' + w + '%">').join('') + '</colgroup>' + head + body + tail;
 }
 async function onCompare(file) { if (file) applyCompare(file.name, await file.arrayBuffer()); }
@@ -1139,18 +1163,18 @@ function applyCompare(name, buf) {
   const wb = XLSX.read(buf, { type: 'array' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
   const byEmail = {}; rows.forEach(r => { const e = String(r.EMail || r.email || '').trim().toLowerCase(); if (e) byEmail[e] = r; });
-  CMP = { name, byEmail };
+  CMP = { name, byEmail, newCols: org3New(Object.keys(rows[0] || {}), rows) };   // 10-14: 이 파일에 아직 없는(또는 비어 있는) 3열
   const nNew = ROWS.filter(r => !byEmail[r.EMail]).length, nGone = Object.keys(byEmail).filter(e => !ROWS.some(r => r.EMail === e)).length;
-  const nChg = ROWS.filter(r => byEmail[r.EMail] && ['Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].some(h => String(byEmail[r.EMail][h] || '').trim() !== String(r[h]).trim())).length;
+  const nChg = ROWS.filter(r => byEmail[r.EMail] && ['Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].concat(ORG3.filter(c => CMP.newCols.indexOf(c) < 0)).some(h => String(byEmail[r.EMail][h] || '').trim() !== String(r[h]).trim())).length;
   const m = document.getElementById('cmp-msg'); m.className = 'status warn';
-  m.textContent = name + ' (' + rows.length + '명) 와 비교 — 신규 ' + nNew + ' · 바뀜 ' + nChg + ' · 빠짐 ' + nGone + '. 오른쪽 「기존 대비」 열에서 확인하세요.';
+  m.textContent = name + ' (' + rows.length + '명) 와 비교 — 신규 ' + nNew + ' · 바뀜 ' + nChg + ' · 빠짐 ' + nGone + (CMP.newCols.length ? ' · 새 열 ' + CMP.newCols.join(' · ') + '(이 파일에 아직 없음 — 반영하면 더해집니다)' : '') + '. 오른쪽 「기존 대비」 열에서 확인하세요.';
   renderTable();
 }
 function download() {
   if (!ROWS.length) return;
-  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'];
+  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: I·J·K 고정 조직도
   const ws = XLSX.utils.aoa_to_sheet([H, ...ROWS.map(r => H.map(h => r[h]))]);
-  ws['!cols'] = [9, 18, 38, 20, 34, 10, 18, 18].map(w => ({ wch: w }));
+  ws['!cols'] = [9, 18, 38, 20, 34, 10, 18, 18, 18, 18, 18].map(w => ({ wch: w }));
   ws['!autofilter'] = { ref: ws['!ref'] };
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   const k = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
@@ -1183,7 +1207,7 @@ function download() {
      · 파일에 없는 필수 열은 맨 뒤에 더한다. 열 순서는 파일을 따른다(사람이 보던 순서 유지). */
 const EMP_FILE = 'employee_search.xlsx';
 const EMP_BACKUP_DIR = 'Backup/employee_search';
-const EMP_OWNED = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'Boss', 'Boss of Boss'];  // HFS 가 값을 정하는 열
+const EMP_OWNED = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'Boss', 'Boss of Boss'].concat(ORG3);  // HFS 가 값을 정하는 열(10-14: + I·J·K 고정 조직도. WMC_old 등은 그대로 보존)
 const EMP_KEYCOLS = ['EMail', 'EngName'];      // 이 둘이 머리글에 없으면 명부 파일이 아니라고 본다
 let PUSH_SAVE_WAIT_MS = 90e3, PUSH_SAVE_POLL_MS = 5e3;   // 반영 뒤 SharePoint 파일 저장을 기다리는 최대 시간 · 간격(10-06)
 const EMP_MIN_ROWS = 10;                        // 이보다 적으면 잘못 읽은 것으로 보고 멈춘다
@@ -1224,6 +1248,19 @@ async function gx(method, url, body, extra) {
    STK-DB 의 employee_search.xlsx 가 그렇다 — A열 =employee_search!E2(EMail) · B열 =employee_search!D2(EngName).
    첫 시트에서 줄을 지우면 그 자리가 #REF! 로 깨지고, 사람이 늘면 끝부분이 비어 버린다.
    그래서 반영한 뒤 같은 사람 수만큼 수식을 다시 깔아 준다. 모양이 조금이라도 다르면 손대지 않는다(null). */
+/* 10-14: 첫 시트의 Excel 표(Table) — A1 에서 시작하는 표가 있으면 새 열(I·J·K)까지 표 범위를 늘린다.
+   표가 아니면(지금 STK 명부) 빈 목록 — 읽기 실패도 빈 목록(표 없이 칸만 쓴다, 예전과 같음). */
+async function tableProbe(wbUrl, sUrl) {
+  try {
+    const t = await gx('GET', sUrl + '/tables?$select=id,name');
+    const out = [];
+    for (const x of ((t && t.value) || [])) {
+      const r = await gx('GET', wbUrl + '/tables/' + encodeURIComponent(x.id) + '/range?$select=address,rowCount,columnCount');
+      out.push({ id: x.id, name: x.name, address: (r && r.address) || '', rowCount: (r && r.rowCount) || 0, columnCount: (r && r.columnCount) || 0 });
+    }
+    return out;
+  } catch (e) { return []; }
+}
 async function vlookupProbe(wbUrl, first, list) {
   if (list.length < 2) return null;
   try {
@@ -1290,6 +1327,7 @@ async function pushOpen() {
     const sUrl = wb + '/worksheets/' + encodeURIComponent(sheet.id);
     const used = await gx('GET', sUrl + '/usedRange(valuesOnly=true)?$select=address,rowCount,columnCount,values');
     const vl = await vlookupProbe(wb, sheet, list);   // 2번째 「거울」 시트(vlookup)가 있으면 알아 둔다
+    const tbls = await tableProbe(wb, sUrl);          // 10-14: 첫 시트가 Excel 표면 새 열까지 범위를 늘린다
     const vals = (used && used.values) || [];
     const headers = (vals[0] || []).map(x => String(x == null ? '' : x).trim());
     const oldRows = vals.slice(1).map(r => { const o = {}; headers.forEach((hd, i) => { o[hd] = r[i] == null ? '' : r[i]; }); return o; })
@@ -1322,18 +1360,22 @@ async function pushOpen() {
     const byEmail = {}; oldRows.forEach(r => { const e = String(r.EMail || r.email || '').trim().toLowerCase(); if (e) byEmail[e] = r; });
     const cols = headers.slice();
     const added = EMP_OWNED.filter(c => cols.indexOf(c) < 0);
+    // 10-14: 새 3열을 더할 때만 — 쓰인 범위 끝의 「머리글도 값도 빈 열」 은 걷어 내고 붙인다(서식만 남은 빈 I열 때문에 J·K·L 로 밀리지 않게)
+    if (added.some(c => ORG3.indexOf(c) >= 0)) { while (cols.length && !cols[cols.length - 1] && vals.slice(1).every(r => String(r[cols.length - 1] == null ? '' : r[cols.length - 1]).trim() === '')) cols.pop(); }
     added.forEach(c => cols.push(c));
+    const orgNew = org3New(headers, oldRows);   // 10-14: 이번에 처음 채우는 3열(머리글 없음 · 또는 모두 빈칸) — 「바뀜」 에 세지 않고 「새 열 추가」 로 보여 준다
+    const tblExt = tbls.filter(t => /!\$?A\$?1:/i.test(t.address) && t.columnCount < cols.length);   // A1 에서 시작해 새 열보다 좁은 표
     const kept = cols.filter(c => c && EMP_OWNED.indexOf(c) < 0);
     if (vl) { vl.emailCol = colLetter(cols.indexOf('EMail') + 1); vl.nameCol = colLetter(cols.indexOf('EngName') + 1); }   // 거울 수식이 가리킬 열
     const body = ROWS.map(r => { const o = byEmail[String(r.EMail).toLowerCase()];
       return cols.map(c => EMP_OWNED.indexOf(c) >= 0 ? (r[c] == null ? '' : r[c]) : (o && o[c] != null ? o[c] : '')); });
 
     // ── 무엇이 달라지는지 ──
-    const DIFFC = ['Company', 'Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'];
+    const DIFFC = ['Company', 'Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: 3열도 비교(처음 채우는 열은 아래에서 뺀다)
     const nw = ROWS.filter(r => !byEmail[r.EMail]);
     const chg = [];
     ROWS.forEach(r => { const o = byEmail[r.EMail]; if (!o) return;
-      const d = DIFFC.filter(c => cols.indexOf(c) >= 0 && String(o[c] == null ? '' : o[c]).trim() !== String(r[c] == null ? '' : r[c]).trim());
+      const d = DIFFC.filter(c => cols.indexOf(c) >= 0 && orgNew.indexOf(c) < 0 && String(o[c] == null ? '' : o[c]).trim() !== String(r[c] == null ? '' : r[c]).trim());
       if (d.length) chg.push({ r, o, d }); });
     const gone = oldRows.filter(o => !ROWS.some(r => r.EMail === String(o.EMail || o.email || '').trim().toLowerCase()));
 
@@ -1344,7 +1386,7 @@ async function pushOpen() {
     const risky = gone.length > 5 || (oldRows.length && gone.length > oldRows.length * 0.2) || offLoa || offExt;
     const backupPath = EMP_BACKUP_DIR + '/employee_search_' + kstStamp() + '.xlsx';   // 한 번만 정해 미리보기와 실제가 같게 한다
     const sig = ROWS.map(r => r.EMail).join('|');                                      // 미리보기 뒤 결과가 바뀌었는지 보는 표식
-    _push = { drive, base, item, wb, sheet, sUrl, cols, body, used, oldRows, byEmail, nw, chg, gone, risky, noLead, noLeadTeams, vl, backupPath, sig };
+    _push = { drive, base, item, wb, sheet, sUrl, cols, body, used, oldRows, byEmail, nw, chg, gone, risky, noLead, noLeadTeams, vl, backupPath, sig, orgNew, tblExt };
 
     // ── 미리보기 ──
     const li = (arr, render) => '<div class="pm-list">' + arr.slice(0, 50).map(render).join('') +
@@ -1360,7 +1402,19 @@ async function pushOpen() {
       (offExt ? '· 「계약직(.ext) 포함」 이 꺼져 있습니다 — 계약직은 명부에서 <b>지워집니다</b>.<br>' : '') +
       'APS 는 이 명부에 없는 사람을 결재자로 찾지 못합니다. 그대로 두려면 취소하고 체크를 켜 주세요.</div>';
     else if (gone.length) H += '<div class="pm-box pm-warn"><b>' + gone.length + '명이 명부에서 지워집니다.</b> 아래 「빠짐」 목록을 확인해 주세요 — 퇴사자가 맞는지, Flex 수집이 중간에 끊긴 것은 아닌지.</div>';
-    if (added.length) H += '<div class="pm-box pm-warn">지금 파일에 없는 열을 맨 뒤에 더합니다: <b>' + esc(added.join(' · ')) + '</b></div>';
+    const addedX = added.filter(c => ORG3.indexOf(c) < 0);   // 10-14: 3열은 아래 「새 열 추가」 에서 따로 보여 준다
+    if (addedX.length) H += '<div class="pm-box pm-warn">지금 파일에 없는 열을 맨 뒤에 더합니다: <b>' + esc(addedX.join(' · ')) + '</b></div>';
+    if (orgNew.length) {
+      const lead3 = ROWS.filter(r => r._kind !== 'st');
+      H += '<div class="pm-box pm-warn"><b>새 열 추가</b> — ' + orgNew.map(c => '<b>' + colLetter(cols.indexOf(c) + 1) + '열 ' + esc(c) + '</b>').join(' · ') +
+        (orgNew.length < ORG3.length || ORG3.some(c => headers.indexOf(c) >= 0) ? ' (머리글만 있고 비어 있던 열은 값만 채웁니다)' : ' (머리글을 새로 만듭니다)') + '<br>' +
+        '고정 조직도(그 사람의 팀장 · 부서장 · RD)입니다. Boss · Boss of Boss 는 그대로 두고, 결재 시스템이 팀장 단계 = Team Manager · 부서장 단계 = Department Head 로 읽습니다. ' +
+        '처음 채우는 열이라 「바뀜」 에는 세지 않습니다 — 팀장 · 본부장 · RD ' + lead3.length + '명의 값을 아래에서, 팀원은 3번 표에서 확인해 주세요.' +
+        li(lead3, r => '<div class="pm-row"><span>' + esc(r.EngName) + '<span class="em">' + esc(r.Team) + '</span></span><span class="d">' +
+          ORG3.map(c => '<span class="k">' + esc(c) + '</span> ' + esc(r[c])).join(' · ') + '</span></div>') +
+        '<label class="pm-chk"><input type="checkbox" class="pm-ackc" onchange="pmAckSync()"> 새 열(' + esc(orgNew.join(' · ')) + ')의 값을 확인했습니다.</label></div>';
+    }
+    if (tblExt.length) H += '<div class="pm-box pm-warn">첫 시트의 Excel 표 ' + tblExt.map(t => '「<b>' + esc(t.name) + '</b>」').join(' · ') + ' 범위를 <b>' + colLetter(cols.length) + '열</b>까지 늘립니다(새 열이 표 안에 들어가게).</div>';
     if (sheet.name !== 'employee_search') H += '<div class="pm-box pm-warn">첫 시트 이름이 <b>' + esc(sheet.name) + '</b> 입니다. APS 는 이름과 상관없이 첫 시트를 읽으므로 여기에 넣습니다.</div>';
     const others = list.slice(1).filter(s => !vl || s.id !== vl.sheet.id);
     if (others.length) H += '<div class="pm-box pm-ok">다른 시트 ' + others.length + '개(' + esc(others.map(s => s.name).join(' · ')) + ')는 손대지 않습니다 — 칸 단위로만 고치기 때문에 수식 · 서식이 그대로 남습니다.</div>';
@@ -1444,6 +1498,18 @@ async function pushRun() {
     pmProg(1, 'act', '시트를 여는 중…');
     try { const s = await gx('POST', P.wb + '/createSession', { persistChanges: true }); ses = s && s.id; } catch (e) { ses = null; }   // 세션이 안 되면 세션 없이 간다
     const SH = ses ? { 'workbook-session-id': ses } : {};
+    // 10-14: 첫 시트가 Excel 표면 새 열까지 표를 넓힌다 — 실패해도 칸 쓰기는 계속(APS 는 표가 아니라 첫 시트 칸을 읽는다)
+    const tblDone = [];
+    for (const t of (P.tblExt || [])) {
+      try {
+        pmProg(1, 'act', '표 ' + t.name + ' 범위를 늘리는 중…');
+        for (let k = t.columnCount; k < P.cols.length; k++) {
+          const colv = [[P.cols[k]]]; for (let r = 1; r < t.rowCount; r++) colv.push(['']);
+          await gx('POST', P.wb + '/tables/' + encodeURIComponent(t.id) + '/columns/add', { index: null, values: colv, name: P.cols[k] }, SH);
+        }
+        tblDone.push(t.name);
+      } catch (e) { tblDone.push(t.name + ' 실패(' + e.message + ')'); }
+    }
     const all = [P.cols, ...P.body];
     const last = colLetter(P.cols.length);
     for (let i = 0; i < all.length; i += 200) {
@@ -1470,7 +1536,7 @@ async function pushRun() {
        · 먼저 Excel(시트) 이 지금 들고 있는 값을 읽어 우리가 쓴 줄과 칸 단위(메일 · EngName · 본부 · 팀 · Boss · Boss of Boss)로 대조 — 쓰기가 맞았는지
        · 그다음 APS 가 읽는 그대로(파일 내려받기 · SheetJS · 첫 시트) 같은 대조를 하되, 맞을 때까지 5초 간격으로 최대 90초 기다린다 — 저장이 끝났는지
        · 시트는 맞는데 90초 안에 파일이 안 바뀌면 「저장 대기」 — 반영은 된 것이고, 잠시 뒤 「STK-DB 명부와 비교」 로 확인하라고 안내한다 */
-    const KEYC = ['EMail', 'EngName', 'Department', 'Team', 'Boss', 'Boss of Boss'];
+    const KEYC = ['EMail', 'EngName', 'Department', 'Team', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: Team Manager · Department Head · RD 도 대조
     const ci = c => P.cols.indexOf(c);
     const want = new Map(P.body.map(r => [String(r[ci('EMail')] || '').trim().toLowerCase(), r]));
     const rk = (get) => KEYC.map(c => { const v = String(get(c) == null ? '' : get(c)).trim(); return c === 'EMail' ? v.toLowerCase() : v; }).join('\u0001');
@@ -1502,7 +1568,8 @@ async function pushRun() {
 
     logAction('STK-DB 반영', { file: EMP_FILE, sheet: P.sheet.name, rows: ROWS.length, verify: dv.ok ? 'file ok' + (waited ? ' (' + waited + 's)' : '') : lag ? 'sheet ok · file save pending' : 'mismatch',
       added: P.nw.length, changed: P.chg.length, removed: P.gone.length, backup: backupPath,
-      mirror: vlDone ? (vlDone.err ? '실패: ' + vlDone.err : P.vl.sheet.name + ' ' + vlDone.rows + '줄') : '건드리지 않음' });
+      mirror: vlDone ? (vlDone.err ? '실패: ' + vlDone.err : P.vl.sheet.name + ' ' + vlDone.rows + '줄') : '건드리지 않음',
+      newCols: (P.orgNew || []).join(' · '), table: tblDone.join(' · ') });   // 10-14: 새 3열 · 표 범위
 
     _pushBusy = false;
     document.getElementById('pm-cancel').disabled = false;
@@ -1938,6 +2005,8 @@ async function autoApply(key, n, tot) {
     ROWS.forEach(r => { const k = nm(r.EngName); if (k) nameCnt[k] = (nameCnt[k] || 0) + 1; });
     const dupNew = P.nw.filter(r => nameCnt[nm(r.EngName)] > 1);
     if (dupNew.length) why.push('신규 직원 EngName 이 다른 직원과 같음 ' + dupNew.length + '명(' + dupNew.slice(0, 3).map(r => String(r.EngName)).join(', ') + ' — Boss 값이 누구인지 모호해짐)');
+    // 10-14: 3열을 처음 만드는(채우는) 회차는 사람이 미리보기에서 값을 한 번 보고 「반영」 — 이 열은 「바뀜」 에 세지 않으므로 다음 회차부터는 평소대로 돈다
+    if (P.orgNew && P.orgNew.length) why.push('새 열 추가(' + P.orgNew.join(' · ') + ') — 처음 한 번은 미리보기에서 값을 확인');
     if (P.noLead && P.noLead.length) why.push('팀장 없는 팀 ' + P.noLeadTeams.map(t => t.team + '(' + t.n + '명 → Boss ' + t.boss + ')').join(', ') + ' — 공석이 맞는지 확인');
     if (P.chg.length > AUTO_MAX_CHG) why.push('바뀜 ' + P.chg.length + '명(한 번에 ' + AUTO_MAX_CHG + '명 넘게 바뀌면 사람이 확인)');
     if (!document.getElementById('opt-loa').checked || !document.getElementById('opt-ext').checked) why.push('휴직자 · 계약직 포함 체크가 꺼져 있음(이 창에서 그대로 반영하면 휴직자 · 계약직이 명부에서 빠집니다 — 체크를 켠 뒤 「지금 한 번」 으로 다시)');
