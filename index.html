@@ -1179,7 +1179,8 @@ function download() {
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   const k = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
   const name = 'employee_search_' + k + '.xlsx';
-  XLSX.writeFile(wb, name, { compression: true });
+  try { XLSX.writeFile(wb, name, { compression: true }); }
+  catch (e) { logAction('Excel 내려받기 실패', { file: name, rows: ROWS.length, 오류: String((e && e.message) || e || '').slice(0, 200) }); throw e; }   // 파일 생성 실패도 남기고 예외는 원래대로(10-15)
   logAction('Excel 내려받기', { file: name, rows: ROWS.length });   // 명부(직원 정보) 반출 — 사람 수만 남긴다
 }
 
@@ -1787,7 +1788,9 @@ function logAction(action, detail) {
       const path = `/${folderPath}/${timeStr}_${userTag}_${rand}.json`;
       const body = JSON.stringify({ timestampKST: `${dateStr} ${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())}`,
         user: rawUser, system: LOG_SYSTEM_NAME, action, detail: detail || {} });
-      await fetch(GRAPH + '/drives/' + d + '/root:' + path + ':/content', { method: 'PUT', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body });
+      const _lr = await fetch(GRAPH + '/drives/' + d + '/root:' + path + ':/content', { method: 'PUT', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body });
+      // 저장이 거부돼도(403 · 429 · 5xx) 흔적이 없던 것 — APS(10-10)처럼 콘솔에 경고만 남긴다(10-15). 원 기능엔 영향 없음
+      if (_lr && !_lr.ok) console.warn('[Log] 기록 실패(무시됨, 원 기능엔 영향 없음): HTTP ' + _lr.status + ' —', LOG_SYSTEM_NAME, action);
     } catch (e) { console.warn('[Log] 기록 실패(무시됨):', e.message); }
   })();
 }
