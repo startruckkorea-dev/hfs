@@ -415,7 +415,7 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
     <div class="deny-ico">!</div>
     <div class="deny-title">접근 권한 없음</div>
     <div class="deny-text" id="deny-text">관리자(ADMIN_SP_1) 전용 도구입니다.</div>
-    <div class="deny-ask"><b>문의</b> — <span id="deny-contact">stk_it@hyosung.com</span><br>이 접근 시도는 APS 이력(Logging_data/APS/HFS)에 기록되었습니다.</div>
+    <div class="deny-ask"><b>문의</b> — <span id="deny-contact">IT팀</span><br>이 접근 시도는 APS 이력(Logging_data/APS/HFS)에 기록되었습니다.</div>
     <button class="btn" onclick="signOut()">다른 계정으로 로그인</button>
   </div>
 </div>
@@ -1632,7 +1632,7 @@ const SCOPES = ['User.Read', 'Sites.ReadWrite.All', 'Files.ReadWrite.All'];
 const SITE_PATH_DB = 'startruckkorea.sharepoint.com:/sites/STK-DB:';
 const LOG_SYSTEM_NAME = 'APS/HFS';     // Logging_data/APS/HFS/… — APS 이력 폴더 안에 HFS 로 구분
 const ADMIN_KEY = 'ADMIN_SP_1';
-const DEFAULT_CONTACT = 'stk_it@hyosung.com';
+const DEFAULT_CONTACT = '';   // 메일은 설정 파일에서만(10-17) — HFS_IT_CONTACT → CONTACT_EMAIL, 없으면 「IT팀」
 let msalApp = null, user = null, dbSiteId = null, logDriveId = null, _sysConfig = null;
 
 window.addEventListener('load', async () => {
@@ -1685,7 +1685,7 @@ async function boot(account) {
   const btn = document.getElementById('btn-login'); btn.disabled = true; btn.textContent = '권한 확인 중...';
   let cfg = null;
   try { cfg = await loadSystemConfig(); } catch (e) { console.warn('[Config]', e.message); }
-  const contact = (cfg && cfg.CONTACT_EMAIL && cfg.CONTACT_EMAIL.email) || DEFAULT_CONTACT;
+  const contact = (cfg && cfg.HFS_IT_CONTACT && cfg.HFS_IT_CONTACT.email) || (cfg && cfg.CONTACT_EMAIL && cfg.CONTACT_EMAIL.email) || DEFAULT_CONTACT;
   const admin = (cfg && cfg[ADMIN_KEY] && cfg[ADMIN_KEY].email || '').trim().toLowerCase();
   const me = myEmails();
   if (!cfg) { showDeny('설정 파일(system_config_final.xlsx)을 읽지 못해 들어갈 수 없습니다.<br>새로고침 후에도 같으면 IT팀에 알려주세요.', contact); logAction('접근 차단', { reason: '설정 읽기 실패', account: me[0] || '' }); return; }
@@ -1706,7 +1706,7 @@ async function boot(account) {
 }
 function showDeny(html, contact) {
   document.getElementById('deny-text').innerHTML = html;
-  document.getElementById('deny-contact').textContent = contact || DEFAULT_CONTACT;
+  document.getElementById('deny-contact').textContent = contact || 'IT팀';
   document.getElementById('login-screen').style.display = 'none';
   const d = document.getElementById('deny-screen'); d.classList.remove('hidden'); d.style.display = 'flex';
 }
@@ -1739,6 +1739,33 @@ async function loadSystemConfig() {
   _sysConfig = cfg;
   return cfg;
 }
+/* IT 문의 메일(10-17) — 코드에 메일 주소를 두지 않는다. system_config_final.xlsx 의 HFS_IT_CONTACT(C열) → 없으면 CONTACT_EMAIL 순으로 채우고,
+   설정을 못 읽었으면(로그인 전 · 읽기 실패) 메일 없이 「IT팀」 만 보인다. 형식이 맞는 메일만 받으므로 HTML 에 그대로 넣어도 안전하다.
+   data-it-contact 가 붙은 화면 칸은 설정을 읽은 뒤 메일 링크로 바뀐다. */
+var IT_CONTACT_KEY = 'HFS_IT_CONTACT', __itMail = '';
+function itTeam(label) { label = label || 'IT팀'; return __itMail ? label + '(' + __itMail + ')' : label; }
+function itApplyDom() {
+  try {
+    document.querySelectorAll('[data-it-contact]').forEach(function (el) {
+      el.textContent = '';
+      if (!__itMail) { el.textContent = el.getAttribute('data-it-contact') || 'IT팀'; return; }
+      var a = document.createElement('a'); a.href = 'mailto:' + __itMail; a.textContent = __itMail;
+      a.style.color = '#0078d4'; a.style.textDecoration = 'none'; el.appendChild(a);
+    });
+  } catch (e) {}
+}
+function itSetFromCfg(cfg) {
+  try {
+    if (!cfg || typeof cfg !== 'object') return;
+    var keys = Object.keys(cfg);
+    var pick = function (k) { var kk = keys.find(function (x) { return String(x).trim().toUpperCase() === k.toUpperCase(); }); return kk && cfg[kk] ? String(cfg[kk].email || '').trim().toLowerCase() : ''; };
+    var ok = function (v) { return /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(v); };
+    var mail = [pick(IT_CONTACT_KEY), pick('CONTACT_EMAIL')].find(ok);
+    if (mail) __itMail = mail;
+    itApplyDom();
+  } catch (e) {}
+}
+loadSystemConfig = (function (orig) { return async function () { var c = await orig.apply(this, arguments); itSetFromCfg(c || (typeof _sysConfig !== 'undefined' ? _sysConfig : null)); return c; }; })(loadSystemConfig);
 const _ensuredLogFolders = new Set();
 async function _ensureLogFolder(driveId, folderPath, t) {
   if (_ensuredLogFolders.has(folderPath)) return true;
