@@ -1039,6 +1039,9 @@ function convert() {
     else if (depts.has(p.team) && lead(p.team) === p) { dept = p.team; team = p.team; boss = rd ? rd.name : '-'; boss2 = '-'; kind = 'fl'; }
     else {
       team = p.team; dept = MAP[team];
+      /* 10-20: 팀이 아니라 본부 조직(F&C 등)에 바로 속한 팀원 — 2번 카드는 본부 이름과 같은 조직을 숨기므로(고를 칸이 없다)
+         여기서도 「매핑 없음」 으로 막지 않고 그 본부로 잡는다. Boss = 그 본부장. */
+      if (!dept && (depts.has(team) || DEPT_ORDER.includes(team))) dept = team;
       if (!dept) { dept = team; warn = '매핑 없음'; }
       const tl = headOf[team], fl = lead(dept);
       if (tl === p) { kind = 'tl'; const up = (fl && fl !== p) ? fl : rd; boss = up ? up.name : '-'; boss2 = up === rd || !up ? '-' : (rd ? rd.name : '-'); }
