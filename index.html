@@ -985,6 +985,46 @@ function afterIngest(detail) {
   const total = [...USERS.values()].length;
   m.className = 'status ok'; m.textContent = '✓ ' + total + '명 — ' + detail;
   build();
+  photoProbe();
+}
+/* ── 프로필 사진 필드 확인(11-06) ───────────────────────────────
+   APS · Training365 에 이니셜 대신 사진을 띄우기 전 1단계: 받은 Flex 구성원 데이터에 사진 주소 필드가 있는지,
+   몇 명에게 있는지, 주소가 어느 곳(host)인지 · 만료 서명이 붙었는지, 이 화면에서 바로 받을 수 있는지(CORS)만 본다.
+   사진 · 주소 값은 화면에 보여 주지 않고 저장 · 전송도 하지 않는다(내려받기 시험은 한 장을 메모리에서만 읽고 버림). */
+function photoProbe() {
+  let box = document.getElementById('photo-probe');
+  if (!box) { box = document.createElement('div'); box.id = 'photo-probe'; box.className = 'status'; box.style.cssText = 'display:block;margin-top:8px;line-height:1.6;font-size:.8rem';
+    const m = document.getElementById('in-msg'); m.parentNode.insertBefore(box, m.nextSibling); }
+  const IMG = /\.(png|jpe?g|webp|gif|bmp)(\?|#|$)/i, KEY = /(image|photo|avatar|thumbnail|thumb|profile|picture|pic)/i;
+  const found = new Map();   // 경로 → { n, hosts:Set, signed, sample }
+  const walk = (v, path, depth, seen) => {
+    if (v == null || depth > 5) return;
+    if (typeof v === 'string') {
+      const s = v.trim(), leaf = path.split('.').pop();
+      if (!/^(https?:)?\/\//i.test(s) && !/^\/[^/]/.test(s)) return;
+      if (!(IMG.test(s) || KEY.test(leaf))) return;
+      let host = '', signed = false;
+      try { const u = new URL(s, 'https://flex.team/'); host = u.host; signed = /[?&](x-amz-[a-z-]+|signature|expires|sig|token|policy|key-pair-id)=/i.test(u.search); } catch (e) { return; }
+      const f = found.get(path) || { n: 0, hosts: new Set(), signed: 0, sample: '' }; f.n++; f.hosts.add(host); if (signed) f.signed++; if (!f.sample) f.sample = s; found.set(path, f); return;
+    }
+    if (typeof v !== 'object' || seen.has(v)) return; seen.add(v);
+    if (Array.isArray(v)) { v.slice(0, 5).forEach(x => walk(x, path + '[]', depth + 1, seen)); return; }
+    Object.keys(v).forEach(k => walk(v[k], path ? path + '.' + k : k, depth + 1, seen));
+  };
+  const all = [...USERS.values()]; all.forEach(u => walk(u, '', 0, new Set()));
+  const rows = [...found.entries()].sort((a, b) => b[1].n - a[1].n);
+  if (!rows.length) { box.className = 'status warn'; box.textContent = '사진 필드 확인: 받은 구성원 데이터에서 사진 주소로 보이는 필드를 찾지 못했습니다 (' + all.length + '명 확인). 「수집 기록 복사」 내용을 IT 에 보내 주세요.'; return; }
+  box.className = 'status ok';
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  box.innerHTML = '<b>사진 필드 확인</b> — ' + all.length + '명 중<br>' + rows.slice(0, 4).map(([p, f]) =>
+    '· <code>' + esc(p) + '</code> ' + f.n + '명 · 주소 ' + esc([...f.hosts].slice(0, 3).join(', ')) + (f.signed ? ' · 만료 서명 있음(' + f.signed + '명)' : ' · 고정 주소') + ' · <span data-photo-test="' + esc(p) + '">내려받기 시험 중…</span>').join('<br>');
+  rows.slice(0, 4).forEach(([p, f]) => {
+    const el = box.querySelector('[data-photo-test="' + CSS.escape(p) + '"]'); const url = new URL(f.sample, 'https://flex.team/').href;
+    const done = t => { if (el) el.textContent = t; };
+    fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store' })
+      .then(r => r.ok ? r.blob().then(b => done('이 화면에서 받기 가능(' + (b.type || '형식 모름') + ' · ' + (b.size < 1024 ? b.size + 'B' : Math.round(b.size / 1024) + 'KB') + ')')) : done('받기 실패(HTTP ' + r.status + ')'))
+      .catch(() => { const im = new Image(); im.referrerPolicy = 'no-referrer'; im.onload = () => done('이 화면에서 바로 받기는 막힘(CORS) · 그림 표시는 됨(' + im.naturalWidth + '×' + im.naturalHeight + ') → Flex 탭의 수집기에서 받아 올려야 함'); im.onerror = () => done('이 화면에서는 받기 · 표시 모두 막힘 → Flex 탭의 수집기에서 받아 올려야 함'); im.src = url; });
+  });
 }
 function resetAll() { USERS = new Map(); CMP = null; ROWS = []; document.getElementById('paste').value = ''; ['in-msg', 'cmp-msg'].forEach(id => { const el = document.getElementById(id); el.textContent = ''; el.className = 'status'; }); ['map-card', 'out-card'].forEach(id => document.getElementById(id).classList.add('hidden')); }
 function showTab(t) { ['auto', 'file'].forEach(k => { document.getElementById('pane-' + k).classList.toggle('hidden', k !== t); document.getElementById('tab-' + k).classList.toggle('on', k === t); }); }
