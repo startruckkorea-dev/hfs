@@ -3,7 +3,7 @@ var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin
 /* v13(10-10) — 요청 틀(TPL_KEY)에 인증 헤더 원문을 남기지 않는다. 예전 틀(v1)은 묶인 헤더도 원문을 함께 저장했으므로 지운다. */
 try { localStorage.removeItem('hfs.collect.tpl.v1'); } catch (e) {}
 if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-var V = 16;
+var V = 17;
 var LDR = window.__hfsLdr || null;   /* 북마크 로더가 남긴 정보 { v: 로더 판, pin: 고정한 수집기 판, ok: 해시 검증 통과 } — 없으면 예전 북마크. HFS 가 다시 등록 안내에 쓴다 */
 var main = async function (ctx) {
 ctx = ctx || {};
@@ -296,22 +296,29 @@ if (/json/i.test(ct)) { var j = await r.json(), u2 = pUrlIn(j); if (!u2) throw n
 var bl = await r.blob(); if (!/^image\//.test(bl.type || ct)) throw new Error('형식 ' + (bl.type || ct || '없음'));
 var bm = await createImageBitmap(bl); var out = pDraw(bm, bm.width, bm.height); if (bm.close) bm.close(); return out;
 };
+/* v17(11-06) — v16 실제 수집: 머리글이 있어도 없어도 「HTTP 400(COMMON_400_000)」 → 주소 자체가 모자람.
+Flex 화면은 사진 주소에 ?size=120&fallbackType=ORIGINAL 을 붙여 부른다(개발자 도구 그림 요청). 데이터의 주소에 size · fallbackType 이
+없으면 붙인 주소(+)로 먼저, 안 되면 원래 주소(=)로. 방법 이름은 「주소+방법」(+h · +b · +i · =h · =b). 원래 주소에 있던 쿼리 이름만 기록(photoStat.qn — 값 없이). */
+var pAdd = function (url) { var x = new URL(url); if (!x.searchParams.has('size')) x.searchParams.set('size', '120'); if (!x.searchParams.has('fallbackType')) x.searchParams.set('fallbackType', 'ORIGINAL'); return x.href; };
 var photoOne = async function (u) {
 var b = u && u.basicInfo, src = b && (b.profileThumbnailImageUrl || b.profileImageUrl), em = b && b.email;
 if (!src || !em) return;
 photoStat.tried++;
-var url = new URL(src, location.href).href, key = String(em).trim().toLowerCase(), errs = [];
-var order = (apiHdr ? ['h', 'b', 'i'] : ['b', 'i']); if (pFirst) order = [pFirst].concat(order.filter(function (x) { return x !== pFirst; }));
-for (var k = 0; k < order.length; k++) {
-try { photos[key] = await pTry(order[k], url); photoStat.ok++; photoStat.via[order[k]]++; if (!pFirst) pFirst = order[k]; if (errs.length) pWhy(errs.join(' / ') + ' → ' + order[k] + ' 성공', src); return; }
-catch (er) { errs.push(order[k] + ' ' + ((er && er.message) || (er && er.name) || '실패')); }
+var url = new URL(src, location.href).href, urlP = pAdd(url), key = String(em).trim().toLowerCase(), errs = [];
+if (photoStat.qn == null) { try { photoStat.qn = Array.from(new URL(url).searchParams.keys()).join(',').slice(0, 80); } catch (e) { photoStat.qn = ''; } }
+var plan = []; (apiHdr ? ['h', 'b', 'i'] : ['b', 'i']).forEach(function (m) { plan.push('+' + m); }); if (urlP !== url) (apiHdr ? ['h', 'b'] : ['b']).forEach(function (m) { plan.push('=' + m); });
+if (pFirst && plan.indexOf(pFirst) >= 0) plan = [pFirst].concat(plan.filter(function (x) { return x !== pFirst; }));
+for (var k = 0; k < plan.length; k++) {
+var how = plan[k], m = how.slice(1);
+try { photos[key] = await pTry(m, how[0] === '+' ? urlP : url); photoStat.ok++; photoStat.via[m]++; photoStat.via[how] = (photoStat.via[how] || 0) + 1; if (!pFirst) pFirst = how; if (errs.length) pWhy(errs.join(' / ') + ' → ' + how + ' 성공', src); return; }
+catch (er) { errs.push(how + ' ' + ((er && er.message) || (er && er.name) || '실패')); }
 }
 photoStat.fail++; pWhy(errs.join(' / '), src);
 };
 var plist = Array.from(users.values()), pIdx = 0, pT0 = Date.now();
 prog('photo', { count: 0, total: plist.length });
 await Promise.all([0, 1, 2, 3].map(async function () { while (pIdx < plist.length && Date.now() - pT0 < PTMAX) { var pu = plist[pIdx++]; await photoOne(pu); if (pIdx % 6 === 0) prog('photo', { count: photoStat.ok, total: plist.length }); } }));
-log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음(머리글 ' + photoStat.via.h + ' · 그냥 ' + photoStat.via.b + ' · img ' + photoStat.via.i + (photoStat.hdr ? '' : ' · 머리글 없음') + ')' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초' + (Object.keys(photoStat.why).length ? ' · 이유 ' + Object.keys(photoStat.why).map(function (k) { return k + ' ×' + photoStat.why[k]; }).join(' | ') + (photoStat.path ? ' · 경로 ' + photoStat.path : '') : ''));
+log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음(머리글 ' + photoStat.via.h + ' · 그냥 ' + photoStat.via.b + ' · img ' + photoStat.via.i + (photoStat.hdr ? '' : ' · 머리글 없음') + ' · 처음 된 방법 ' + (pFirst || '-') + ' · 원래 쿼리 [' + (photoStat.qn || '') + '])' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초' + (Object.keys(photoStat.why).length ? ' · 이유 ' + Object.keys(photoStat.why).map(function (k) { return k + ' ×' + photoStat.why[k]; }).join(' | ') + (photoStat.path ? ' · 경로 ' + photoStat.path : '') : ''));
 var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY, photos: photos, photoStat: photoStat }, acked = false;
 onAck = function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } };
 window.addEventListener('message', onAck);
