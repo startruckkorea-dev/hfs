@@ -3,7 +3,7 @@ var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin
 /* v13(10-10) — 요청 틀(TPL_KEY)에 인증 헤더 원문을 남기지 않는다. 예전 틀(v1)은 묶인 헤더도 원문을 함께 저장했으므로 지운다. */
 try { localStorage.removeItem('hfs.collect.tpl.v1'); } catch (e) {}
 if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-var V = 15;
+var V = 16;
 var LDR = window.__hfsLdr || null;   /* 북마크 로더가 남긴 정보 { v: 로더 판, pin: 고정한 수집기 판, ok: 해시 검증 통과 } — 없으면 예전 북마크. HFS 가 다시 등록 안내에 쓴다 */
 var main = async function (ctx) {
 ctx = ctx || {};
@@ -101,7 +101,9 @@ var res = await F(q.url, { method: T.method, headers: freshHeaders(q.headers), b
 if (!res.ok) throw new Error('HTTP ' + res.status);
 return res.json();
 };
+var apiHdr = null;   /* v16 — 구성원 목록을 읽은 Flex 요청 머리글(x-flex-aid · flexteam-* …). 사진 API 가 쿠키만으로는 400 이라 같은 머리글로 부른다 */
 var readAll = async function (T) {
+apiHdr = (T.first && T.first.headers) || T.headers || null;
 users = new Map(); total = 0;
 var cont = null, pages = 0, prevSize = -1;
 for (var pg = 0; pg < 100; pg++) {
@@ -271,31 +273,45 @@ if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로
 /* v14(11-06) — 프로필 사진: 구성원마다 basicInfo.profileThumbnailImageUrl(없으면 profileImageUrl)을 이 Flex 탭의 로그인 그대로 받아
 가운데를 96×96 으로 잘라 JPEG 로 줄여 HFS 에 함께 보낸다. 사진 서버(thumbnail-cdn.flex.team)로 넘어갈 때 쿠키를 싣지 않아야 받힌다(credentials: same-origin).
 실패 · 시간 초과(90초 · 자동 수집은 60초 — HFS 가 4분까지 기다린다)는 그 사진만 빠지고 구성원 목록은 그대로 보낸다. 사진 원본 주소는 보내지 않는다. */
-/* v15(11-06) — v14 첫 실행에서 72명 모두 사진을 받지 못함(이유가 기록되지 않았다). 그래서
-① 사람마다 실패 이유(HTTP 상태 · 받은 형식 · 오류 이름)를 세어 HFS 에 함께 보낸다(photoStat.why · 처음 실패한 주소의 경로만 — 쿼리 · 서명 없이),
-② fetch 가 그림이 아닌 것을 받거나 막히면 브라우저가 그림을 읽는 방식(<img crossOrigin=anonymous> — 같은 출처 쿠키 · 그림 요청 머리글)으로 한 번 더 읽는다. */
-var photos = {}, photoStat = { tried: 0, ok: 0, fail: 0, why: {}, via: { fetch: 0, img: 0 }, path: '' }, PX = 96, PTMAX = AUTO ? 60000 : 90000;
-var pWhy = function (k, src) { k = String(k).slice(0, 80); photoStat.why[k] = (photoStat.why[k] || 0) + 1; if (!photoStat.path) { try { photoStat.path = new URL(src, location.href).pathname.slice(0, 120); } catch (e) {} } };
+/* v16(11-06) — v15 실제 수집: 「fetch HTTP 400 / img 읽기 실패 ×72」. 사진 API(/api/v2/thumbnail/…)는 쿠키만으로는 400 —
+Flex 화면은 목록 API 와 같은 머리글(x-flex-aid · flexteam-* …)로 부른다. 그래서 순서대로 해 보고, 처음 된 방법을 다음 사람부터 먼저 쓴다:
+ h  목록을 읽은 머리글 그대로(x-request-time 은 새로) — 그림이면 그대로, JSON 이면 안의 그림 주소(https)를 쿠키 없이 받는다
+ b  머리글 없이(v14 · v15 방식)
+ i  <img crossOrigin=anonymous>
+실패하면 방법마다 HTTP 상태와 응답의 code · message 앞부분(영문 · 숫자만 60자)을 이유로 센다. 사진 · 주소 · 머리글 값은 기록하지 않는다. */
+var photos = {}, photoStat = { tried: 0, ok: 0, fail: 0, why: {}, via: { h: 0, b: 0, i: 0 }, path: '', hdr: !!apiHdr }, PX = 96, PTMAX = AUTO ? 60000 : 90000, pFirst = null;
+var pWhy = function (k, src) { k = String(k).slice(0, 110); photoStat.why[k] = (photoStat.why[k] || 0) + 1; if (!photoStat.path) { try { photoStat.path = new URL(src, location.href).pathname.slice(0, 120); } catch (e) {} } };
 var pImg = function (url) { return new Promise(function (ok, no) { var im = new Image(), t = setTimeout(function () { im.src = ''; no(new Error('시간 초과')); }, 15000); im.crossOrigin = 'anonymous'; im.onload = function () { clearTimeout(t); ok(im); }; im.onerror = function () { clearTimeout(t); no(new Error('읽기 실패')); }; im.src = url; }); };
 var pDraw = function (srcImg, w, h) { var sz = Math.min(w, h); var cv = document.createElement('canvas'); cv.width = cv.height = PX; var g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.fillStyle = '#ffffff'; g.fillRect(0, 0, PX, PX); g.drawImage(srcImg, (w - sz) / 2, (h - sz) / 2, sz, sz, 0, 0, PX, PX); return cv.toDataURL('image/jpeg', 0.86); };
+var pHdr = function () { var o = {}; Object.keys(apiHdr || {}).forEach(function (k) { if (/^(content-type|content-length|sentry-trace|baggage|traceparent|tracestate)$/i.test(k)) return; var v = String(apiHdr[k]); if (/^x-request-time$/i.test(k)) v = /^\d{10}$/.test(v) ? String(Math.floor(Date.now() / 1000)) : String(Date.now()); o[k] = v; }); return o; };
+var pErr = async function (r) { var t = ''; try { t = await r.text(); } catch (e) {} var m = t.match(/"(?:code|errorCode|error)"\s*:\s*"([^"]{1,60})"/) || t.match(/"message"\s*:\s*"([^"]{1,60})"/); return 'HTTP ' + r.status + (m ? '(' + m[1].replace(/[^\w .:-]/g, '').slice(0, 60) + ')' : ''); };
+var pUrlIn = function (j) { var hit = ''; var walk = function (v, d) { if (hit || v == null || d > 5) return; if (typeof v === 'string') { if (/^https:\/\/[^\s"]+$/i.test(v)) hit = v; return; } if (typeof v === 'object') Object.keys(v).forEach(function (k) { walk(v[k], d + 1); }); }; walk(j, 0); return hit; };
+// 한 방법 — 성공하면 data URL, 실패하면 이유를 던진다
+var pTry = async function (how, url) {
+if (how === 'i') { var im = await pImg(url); return pDraw(im, im.naturalWidth, im.naturalHeight); }
+var r = await F.call(window, url, how === 'h' ? { headers: pHdr(), credentials: 'same-origin' } : { credentials: 'same-origin' });
+if (!r.ok) throw new Error(await pErr(r));
+var ct = (r.headers.get('content-type') || '').split(';')[0];
+if (/json/i.test(ct)) { var j = await r.json(), u2 = pUrlIn(j); if (!u2) throw new Error('JSON 안에 그림 주소 없음'); r = await F.call(window, u2, { credentials: 'omit' }); if (!r.ok) throw new Error('그림 주소 ' + await pErr(r)); ct = (r.headers.get('content-type') || '').split(';')[0]; }
+var bl = await r.blob(); if (!/^image\//.test(bl.type || ct)) throw new Error('형식 ' + (bl.type || ct || '없음'));
+var bm = await createImageBitmap(bl); var out = pDraw(bm, bm.width, bm.height); if (bm.close) bm.close(); return out;
+};
 var photoOne = async function (u) {
 var b = u && u.basicInfo, src = b && (b.profileThumbnailImageUrl || b.profileImageUrl), em = b && b.email;
 if (!src || !em) return;
 photoStat.tried++;
-var url = new URL(src, location.href).href, key = String(em).trim().toLowerCase(), why1 = '';
-try {
-var r = await F.call(window, url, { credentials: 'same-origin' });
-if (!r.ok) why1 = 'fetch HTTP ' + r.status;
-else { var bl = await r.blob(); if (!/^image\//.test(bl.type)) why1 = 'fetch 형식 ' + (bl.type || '없음').split(';')[0];
-else { var bm = await createImageBitmap(bl); photos[key] = pDraw(bm, bm.width, bm.height); if (bm.close) bm.close(); photoStat.ok++; photoStat.via.fetch++; return; } }
-} catch (er) { why1 = 'fetch ' + ((er && er.name) || '오류') + (er && er.message ? ': ' + er.message : ''); }
-try { var im = await pImg(url); photos[key] = pDraw(im, im.naturalWidth, im.naturalHeight); photoStat.ok++; photoStat.via.img++; if (why1) pWhy(why1 + ' → img 성공', src); }
-catch (er2) { photoStat.fail++; pWhy((why1 || 'fetch ?') + ' / img ' + ((er2 && er2.message) || '실패'), src); }
+var url = new URL(src, location.href).href, key = String(em).trim().toLowerCase(), errs = [];
+var order = (apiHdr ? ['h', 'b', 'i'] : ['b', 'i']); if (pFirst) order = [pFirst].concat(order.filter(function (x) { return x !== pFirst; }));
+for (var k = 0; k < order.length; k++) {
+try { photos[key] = await pTry(order[k], url); photoStat.ok++; photoStat.via[order[k]]++; if (!pFirst) pFirst = order[k]; if (errs.length) pWhy(errs.join(' / ') + ' → ' + order[k] + ' 성공', src); return; }
+catch (er) { errs.push(order[k] + ' ' + ((er && er.message) || (er && er.name) || '실패')); }
+}
+photoStat.fail++; pWhy(errs.join(' / '), src);
 };
 var plist = Array.from(users.values()), pIdx = 0, pT0 = Date.now();
 prog('photo', { count: 0, total: plist.length });
 await Promise.all([0, 1, 2, 3].map(async function () { while (pIdx < plist.length && Date.now() - pT0 < PTMAX) { var pu = plist[pIdx++]; await photoOne(pu); if (pIdx % 6 === 0) prog('photo', { count: photoStat.ok, total: plist.length }); } }));
-log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음(fetch ' + photoStat.via.fetch + ' · img ' + photoStat.via.img + ')' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초' + (Object.keys(photoStat.why).length ? ' · 이유 ' + Object.keys(photoStat.why).map(function (k) { return k + ' ×' + photoStat.why[k]; }).join(' | ') + (photoStat.path ? ' · 경로 ' + photoStat.path : '') : ''));
+log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음(머리글 ' + photoStat.via.h + ' · 그냥 ' + photoStat.via.b + ' · img ' + photoStat.via.i + (photoStat.hdr ? '' : ' · 머리글 없음') + ')' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초' + (Object.keys(photoStat.why).length ? ' · 이유 ' + Object.keys(photoStat.why).map(function (k) { return k + ' ×' + photoStat.why[k]; }).join(' | ') + (photoStat.path ? ' · 경로 ' + photoStat.path : '') : ''));
 var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY, photos: photos, photoStat: photoStat }, acked = false;
 onAck = function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } };
 window.addEventListener('message', onAck);
