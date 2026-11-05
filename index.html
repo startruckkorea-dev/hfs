@@ -580,7 +580,7 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
   /* v13(10-10) — 요청 틀(TPL_KEY)에 인증 헤더 원문을 남기지 않는다. 예전 틀(v1)은 묶인 헤더도 원문을 함께 저장했으므로 지운다. */
   try { localStorage.removeItem('hfs.collect.tpl.v1'); } catch (e) {}
   if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-  var V = 13;
+  var V = 14;
   var LDR = window.__hfsLdr || null;   /* 북마크 로더가 남긴 정보 { v: 로더 판, pin: 고정한 수집기 판, ok: 해시 검증 통과 } — 없으면 예전 북마크. HFS 가 다시 등록 안내에 쓴다 */
   var main = async function (ctx) {
   ctx = ctx || {};
@@ -868,7 +868,30 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
   if (AUTO && !ok) { fail('자동 수집: 저장된 연결로 끝까지 읽지 못했습니다(' + users.size + (total ? '/' + total : '') + '명). Flex 로그인이 풀렸거나 화면이 바뀌었을 수 있습니다 — Flex 탭에서 「HFS 수집」 을 한 번 다시 눌러 주세요.'); return; }
   if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
   /* ④ HFS 창으로 */
-  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY }, acked = false;
+  /* v14(11-06) — 프로필 사진: 구성원마다 basicInfo.profileThumbnailImageUrl(없으면 profileImageUrl)을 이 Flex 탭의 로그인 그대로 받아
+  가운데를 96×96 으로 잘라 JPEG 로 줄여 HFS 에 함께 보낸다. 사진 서버(thumbnail-cdn.flex.team)로 넘어갈 때 쿠키를 싣지 않아야 받힌다(credentials: same-origin).
+  실패 · 시간 초과(90초 · 자동 수집은 60초 — HFS 가 4분까지 기다린다)는 그 사진만 빠지고 구성원 목록은 그대로 보낸다. 사진 원본 주소는 보내지 않는다. */
+  var photos = {}, photoStat = { tried: 0, ok: 0, fail: 0 }, PX = 96, PTMAX = AUTO ? 60000 : 90000;
+  var photoOne = async function (u) {
+  var b = u && u.basicInfo, src = b && (b.profileThumbnailImageUrl || b.profileImageUrl), em = b && b.email;
+  if (!src || !em) return;
+  photoStat.tried++;
+  try {
+  var r = await F.call(window, new URL(src, location.href).href, { credentials: 'same-origin' });
+  if (!r.ok) { photoStat.fail++; return; }
+  var bl = await r.blob(); if (!/^image\//.test(bl.type)) { photoStat.fail++; return; }
+  var bm = await createImageBitmap(bl), sz = Math.min(bm.width, bm.height);
+  var cv = document.createElement('canvas'); cv.width = cv.height = PX;
+  var g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.fillStyle = '#ffffff'; g.fillRect(0, 0, PX, PX);
+  g.drawImage(bm, (bm.width - sz) / 2, (bm.height - sz) / 2, sz, sz, 0, 0, PX, PX); if (bm.close) bm.close();
+  photos[String(em).trim().toLowerCase()] = cv.toDataURL('image/jpeg', 0.86); photoStat.ok++;
+  } catch (er) { photoStat.fail++; }
+  };
+  var plist = Array.from(users.values()), pIdx = 0, pT0 = Date.now();
+  prog('photo', { count: 0, total: plist.length });
+  await Promise.all([0, 1, 2, 3].map(async function () { while (pIdx < plist.length && Date.now() - pT0 < PTMAX) { var pu = plist[pIdx++]; await photoOne(pu); if (pIdx % 6 === 0) prog('photo', { count: photoStat.ok, total: plist.length }); } }));
+  log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초');
+  var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY, photos: photos, photoStat: photoStat }, acked = false;
   onAck = function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } };
   window.addEventListener('message', onAck);
   log('보냄: ' + users.size + '명' + (total ? ' / ' + total : ''));
@@ -976,57 +999,167 @@ async function onFiles(files) {
   resetMap(false);
   const parts = [];
   for (const f of files) { const r = ingest(await f.text(), f.name); parts.push(f.name + ': ' + r.found + '명' + (r.found ? '' : ' (사용자 정보 없음)')); }
-  afterIngest(parts.join(' · '));
+  photoTake(null); afterIngest(parts.join(' · '));
 }
-function onPaste() { const t = document.getElementById('paste').value; if (!t.trim()) return; const r = ingest(t, '붙여넣기'); afterIngest('붙여넣기: JSON ' + r.vals + '개 · ' + r.found + '명'); }
+function onPaste() { const t = document.getElementById('paste').value; if (!t.trim()) return; const r = ingest(t, '붙여넣기'); photoTake(null); afterIngest('붙여넣기: JSON ' + r.vals + '개 · ' + r.found + '명'); }
 function afterIngest(detail) {
   const m = document.getElementById('in-msg');
   if (!USERS.size) { m.className = 'status err'; m.textContent = '사용자 정보를 찾지 못했습니다 — search-users 응답이나 HAR 파일인지 확인해 주세요. (' + detail + ')'; return; }
   const total = [...USERS.values()].length;
   m.className = 'status ok'; m.textContent = '✓ ' + total + '명 — ' + detail;
   build();
-  photoProbe();
+  photoPanel();
 }
-/* ── 프로필 사진 필드 확인(11-06) ───────────────────────────────
-   APS · Training365 에 이니셜 대신 사진을 띄우기 전 1단계: 받은 Flex 구성원 데이터에 사진 주소 필드가 있는지,
-   몇 명에게 있는지, 주소가 어느 곳(host)인지 · 만료 서명이 붙었는지, 이 화면에서 바로 받을 수 있는지(CORS)만 본다.
-   사진 · 주소 값은 화면에 보여 주지 않고 저장 · 전송도 하지 않는다(내려받기 시험은 한 장을 메모리에서만 읽고 버림). */
-function photoProbe() {
-  let box = document.getElementById('photo-probe');
-  if (!box) { box = document.createElement('div'); box.id = 'photo-probe'; box.className = 'status'; box.style.cssText = 'display:block;margin-top:8px;line-height:1.6;font-size:.8rem';
-    const m = document.getElementById('in-msg'); m.parentNode.insertBefore(box, m.nextSibling); }
-  const IMG = /\.(png|jpe?g|webp|gif|bmp)(\?|#|$)/i, KEY = /(image|photo|avatar|thumbnail|thumb|profile|picture|pic)/i;
-  const found = new Map();   // 경로 → { n, hosts:Set, signed, sample }
-  const walk = (v, path, depth, seen) => {
-    if (v == null || depth > 5) return;
-    if (typeof v === 'string') {
-      const s = v.trim(), leaf = path.split('.').pop();
-      if (!/^(https?:)?\/\//i.test(s) && !/^\/[^/]/.test(s)) return;
-      if (!(IMG.test(s) || KEY.test(leaf))) return;
-      let host = '', signed = false;
-      try { const u = new URL(s, 'https://flex.team/'); host = u.host; signed = /[?&](x-amz-[a-z-]+|signature|expires|sig|token|policy|key-pair-id)=/i.test(u.search); } catch (e) { return; }
-      const f = found.get(path) || { n: 0, hosts: new Set(), signed: 0, sample: '' }; f.n++; f.hosts.add(host); if (signed) f.signed++; if (!f.sample) f.sample = s; found.set(path, f); return;
-    }
-    if (typeof v !== 'object' || seen.has(v)) return; seen.add(v);
-    if (Array.isArray(v)) { v.slice(0, 5).forEach(x => walk(x, path + '[]', depth + 1, seen)); return; }
-    Object.keys(v).forEach(k => walk(v[k], path ? path + '.' + k : k, depth + 1, seen));
-  };
-  const all = [...USERS.values()]; all.forEach(u => walk(u, '', 0, new Set()));
-  const rows = [...found.entries()].sort((a, b) => b[1].n - a[1].n);
-  if (!rows.length) { box.className = 'status warn'; box.textContent = '사진 필드 확인: 받은 구성원 데이터에서 사진 주소로 보이는 필드를 찾지 못했습니다 (' + all.length + '명 확인). 「수집 기록 복사」 내용을 IT 에 보내 주세요.'; return; }
-  box.className = 'status ok';
-  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  box.innerHTML = '<b>사진 필드 확인</b> — ' + all.length + '명 중<br>' + rows.slice(0, 4).map(([p, f]) =>
-    '· <code>' + esc(p) + '</code> ' + f.n + '명 · 주소 ' + esc([...f.hosts].slice(0, 3).join(', ')) + (f.signed ? ' · 만료 서명 있음(' + f.signed + '명)' : ' · 고정 주소') + ' · <span data-photo-test="' + esc(p) + '">내려받기 시험 중…</span>').join('<br>');
-  rows.slice(0, 4).forEach(([p, f]) => {
-    const el = box.querySelector('[data-photo-test="' + CSS.escape(p) + '"]'); const url = new URL(f.sample, 'https://flex.team/').href;
-    const done = t => { if (el) el.textContent = t; };
-    fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store' })
-      .then(r => r.ok ? r.blob().then(b => done('이 화면에서 받기 가능(' + (b.type || '형식 모름') + ' · ' + (b.size < 1024 ? b.size + 'B' : Math.round(b.size / 1024) + 'KB') + ')')) : done('받기 실패(HTTP ' + r.status + ')'))
-      .catch(() => { const im = new Image(); im.referrerPolicy = 'no-referrer'; im.onload = () => done('이 화면에서 바로 받기는 막힘(CORS) · 그림 표시는 됨(' + im.naturalWidth + '×' + im.naturalHeight + ') → Flex 탭의 수집기에서 받아 올려야 함'); im.onerror = () => done('이 화면에서는 받기 · 표시 모두 막힘 → Flex 탭의 수집기에서 받아 올려야 함'); im.src = url; });
-  });
+/* ── 프로필 사진(11-06) ───────────────────────────────
+   수집 코드 v14 부터 Flex 탭이 구성원 사진을 96×96 JPEG(data URL)로 줄여 목록과 함께 보낸다(photos: { email: dataURL }).
+   여기서는 ① 받은 사진을 미리 보여 주고 ② 「STK-DB 에 사진 반영」 → 바뀌는 수 확인 → 「이대로 올리기」 로
+   STK-DB 문서 라이브러리 맨 위의 employee_photos.json(employee_search.xlsx 옆 — 읽기 · 쓰기 권한도 명부와 같다) 한 파일에 올린다.
+   APS · Training365 는 이 파일 하나를 읽어 이니셜 대신 사진을 띄운다.
+   · 여러 사람(PHOTO_DUP명 이상)에게 똑같은 그림은 Flex 기본 그림으로 보고 뺀다 — 이니셜이 더 알아보기 쉽다.
+   · 이번에 못 받은 사람(실패 · 시간 초과)은 올려 둔 사진을 그대로 둔다. 사진을 지운 사람 · 퇴사자는
+     사진까지 다 받았고(실패 0) 구성원도 Flex 전체 인원만큼 다 받았을 때만 뺀다.
+   · 바뀐 것이 있을 때만 쓴다. 읽은 뒤 다른 창이 먼저 썼으면(eTag) 쓰지 않고 다시 누르게 한다. 이전 판은 SharePoint 버전 기록에 남는다.
+   · 자동 수집(08:00 · 20:00)은 사람이 한 번 올려 파일이 생긴 뒤부터 같은 규칙으로 따라 고친다.
+     다만 한 번에 PHOTO_AUTO_MAX_DEL명 넘게 빠지면 빼지 않고(추가 · 바뀜만) 이력에 남긴다.
+   · 받은 값은 「data:image/jpeg;base64,…」 모양 · 크기만 통과시킨다(화면 · 파일에 다른 것이 섞이지 않게). 사진 원본 주소는 받지도 쓰지도 않는다. */
+const PHOTO_FILE = 'employee_photos.json', PHOTO_PX = 96, PHOTO_DUP = 3, PHOTO_AUTO_MAX_DEL = 5;
+const PHOTO_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/;
+let PHOTOS = null, PHOTO_META = null, _photoBusy = false, _photoPlan = null;
+const photoHasSrc = u => !!(u && u.basicInfo && (u.basicInfo.profileThumbnailImageUrl || u.basicInfo.profileImageUrl));
+// flexInboxFlush 에서 USERS 를 채운 뒤 부른다. d 가 없으면(파일 · 붙여 넣기) 사진 없음
+function photoTake(d) {
+  _photoPlan = null;
+  if (!d || !d.photos || typeof d.photos !== 'object') { PHOTOS = null; PHOTO_META = { none: true, v: (d && d.v) || 0 }; return; }
+  const raw = {};
+  Object.keys(d.photos).forEach(k => { const e = String(k).trim().toLowerCase(), v = d.photos[k]; if (USERS.has(e) && typeof v === 'string' && v.length < 80000 && PHOTO_RE.test(v)) raw[e] = v; });
+  const cnt = {}; Object.values(raw).forEach(v => { cnt[v] = (cnt[v] || 0) + 1; });
+  const out = {}; let dup = 0; Object.keys(raw).forEach(e => { if (cnt[raw[e]] >= PHOTO_DUP) dup++; else out[e] = raw[e]; });
+  const st = d.photoStat && typeof d.photoStat === 'object' ? d.photoStat : {};
+  const tried = Number(st.tried) || 0, fail = Number(st.fail) || 0, withSrc = [...USERS.values()].filter(photoHasSrc).length;
+  const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (Number(d.total) || 0);
+  PHOTOS = out;
+  PHOTO_META = { v: d.v || 0, got: Object.keys(raw).length, dup, fail, tried, withSrc, full: fail === 0 && tried >= withSrc, allUsers: tot > 0 && USERS.size >= tot };
 }
-function resetAll() { USERS = new Map(); CMP = null; ROWS = []; document.getElementById('paste').value = ''; ['in-msg', 'cmp-msg'].forEach(id => { const el = document.getElementById(id); el.textContent = ''; el.className = 'status'; }); ['map-card', 'out-card'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+const photoEsc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function photoPanel(msg, cls) {
+  let box = document.getElementById('photo-box');
+  if (!box) { box = document.createElement('div'); box.id = 'photo-box'; const m = document.getElementById('in-msg'); m.parentNode.insertBefore(box, m.nextSibling); }
+  box.style.cssText = 'display:block;margin-top:8px;line-height:1.6;font-size:.78rem';
+  const M = PHOTO_META;
+  if (!USERS.size || !M) { box.className = 'status'; box.innerHTML = ''; return; }
+  if (M.none) {
+    const withSrc = [...USERS.values()].filter(photoHasSrc).length;
+    if (!withSrc) { box.className = 'status'; box.innerHTML = ''; return; }
+    box.className = 'status warn';
+    box.textContent = '프로필 사진 — ' + (M.v ? '북마크가 예전 수집 코드(v' + M.v + ')로 돌아 사진을 받지 않았습니다. 북마크 바의 「HFS 수집」 을 지우고 위 「HFS 수집」 단추를 다시 끌어다 놓은 뒤 Flex 에서 눌러 주세요.'
+      : '파일 · 붙여 넣기로 넣은 목록에는 사진이 없습니다. 사진은 Flex 에서 「HFS 수집」 으로 받을 때 함께 옵니다.');
+    return;
+  }
+  const keys = Object.keys(PHOTOS), SHOW = 60;
+  const name = e => { const u = USERS.get(e), b = u && u.basicInfo; return b ? (b.name || '') + (b.displayName && b.displayName !== b.name ? ' · ' + b.displayName : '') : e; };
+  keys.sort((a, b) => name(a).localeCompare(name(b), 'ko'));
+  const info = [keys.length + '명'];
+  if (M.dup) info.push('Flex 기본 그림 ' + M.dup + '명 제외');
+  const miss = Math.max(0, M.withSrc - M.got); if (miss) info.push('받지 못함 ' + miss + '명(올려 둔 사진 유지)');
+  box.className = 'status' + (keys.length ? '' : ' warn');
+  box.innerHTML = '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between">'
+    + '<span><b>프로필 사진</b> ' + photoEsc(info.join(' · ')) + '</span>'
+    + '<span id="photo-act"></span></div>'
+    + (keys.length ? '<div id="photo-grid" style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 2px">'
+      + keys.slice(0, SHOW).map(e => '<img src="' + PHOTOS[e] + '" alt="" title="' + photoEsc(name(e)) + '" width="30" height="30" style="width:30px;height:30px;border-radius:50%;object-fit:cover;border:1px solid #e5e7eb">').join('')
+      + (keys.length > SHOW ? '<span style="align-self:center;margin-left:4px;color:#6b7280">외 ' + (keys.length - SHOW) + '명</span>' : '') + '</div>' : '')
+    + '<div id="photo-st" style="color:#4b5563">' + photoEsc(msg || (keys.length ? '「STK-DB 에 사진 반영」 을 누르면 바뀌는 수를 먼저 보여 드립니다. 올리면 APS · Training365 가 이니셜 대신 이 사진을 띄웁니다.' : '받은 사진이 없습니다.')) + '</div>';
+  if (cls) document.getElementById('photo-st').style.color = cls === 'err' ? '#a4262c' : cls === 'ok' ? '#0b5f0b' : '#7a5a12';
+  photoButtons();
+}
+function photoButtons() {
+  const a = document.getElementById('photo-act'); if (!a) return;
+  if (!PHOTOS || !Object.keys(PHOTOS).length && !(PHOTO_META && PHOTO_META.full)) { a.innerHTML = ''; return; }
+  a.innerHTML = _photoPlan
+    ? '<button class="btn sm p" id="photo-go" onclick="photoCommit()">이대로 올리기</button> <button class="btn sm" onclick="photoCancel()">취소</button>'
+    : '<button class="btn sm" id="photo-go" onclick="photoCheck()">STK-DB 에 사진 반영</button>';
+  if (_photoBusy) a.querySelectorAll('button').forEach(b => { b.disabled = true; });
+}
+function photoSay(t, cls) { const el = document.getElementById('photo-st'); if (!el) return; el.textContent = t; el.style.color = cls === 'err' ? '#a4262c' : cls === 'ok' ? '#0b5f0b' : cls === 'warn' ? '#7a5a12' : '#4b5563'; }
+// STK-DB 의 employee_photos.json — 없으면 exists:false
+async function photoRemote() {
+  const drive = await _getLogDriveId(); if (!drive) throw new Error('STK-DB 드라이브를 찾지 못했습니다');
+  const t = await token(); if (!t) throw new Error('로그인이 풀렸습니다 — 새로고침 후 다시 해 주세요');
+  const mr = await fetch(GRAPH + '/drives/' + drive + '/root:/' + PHOTO_FILE, { headers: { Authorization: 'Bearer ' + t }, cache: 'no-store' });
+  if (mr.status === 404) return { drive, exists: false, users: {} };
+  if (!mr.ok) throw new Error('사진 파일 확인 HTTP ' + mr.status);
+  const meta = await mr.json();
+  const cr = await fetch(GRAPH + '/drives/' + drive + '/items/' + meta.id + '/content', { headers: { Authorization: 'Bearer ' + t }, cache: 'no-store' });
+  if (!cr.ok) throw new Error('사진 파일 읽기 HTTP ' + cr.status);
+  let j = null; try { j = await cr.json(); } catch (e) {}
+  if (!j || j.v !== 1 || !j.users || typeof j.users !== 'object') throw new Error('STK-DB 의 ' + PHOTO_FILE + ' 모양이 맞지 않아 덮어쓰지 않았습니다 — IT 에 알려 주세요');
+  return { drive, exists: true, eTag: meta.eTag, users: j.users, at: j.at || '' };
+}
+// 올릴 내용 · 바뀌는 수. auto 면 한 번에 많이 빠지는 것은 보류
+function photoPlan(remote, auto) {
+  const old = remote.users || {}, next = Object.assign({}, old), M = PHOTO_META || {};
+  let add = 0, chg = 0, same = 0;
+  Object.keys(PHOTOS).forEach(e => { if (!(e in old)) add++; else if (old[e] !== PHOTOS[e]) chg++; else same++; next[e] = PHOTOS[e]; });
+  let drop = [];
+  if (M.full) USERS.forEach((u, e) => { if (!(e in PHOTOS) && (e in old)) drop.push(e); });          // 사진을 지웠거나 기본 그림으로 바뀐 사람
+  if (M.full && M.allUsers) Object.keys(old).forEach(e => { if (!USERS.has(e) && drop.indexOf(e) < 0) drop.push(e); });   // Flex 에 없는 사람(퇴사)
+  let held = 0;
+  if (auto && drop.length > PHOTO_AUTO_MAX_DEL) { held = drop.length; drop = []; }
+  drop.forEach(e => { delete next[e]; });
+  return { next, add, chg, same, del: drop.length, held, keep: Object.keys(next).length - Object.keys(PHOTOS).length - held, total: Object.keys(next).length, was: Object.keys(old).length };
+}
+const photoSum = p => '추가 ' + p.add + ' · 바뀜 ' + p.chg + ' · 빠짐 ' + p.del + (p.keep > 0 ? ' · 이번에 못 받아 그대로 둠 ' + p.keep : '') + (p.held ? ' · 빠짐 ' + p.held + '명은 보류(사람이 확인)' : '');
+async function photoWrite(remote, p, auto) {
+  const t = await token(); if (!t) throw new Error('로그인이 풀렸습니다 — 새로고침 후 다시 해 주세요');
+  const users = {}; Object.keys(p.next).sort().forEach(e => { users[e] = p.next[e]; });
+  const text = JSON.stringify({ v: 1, px: PHOTO_PX, at: new Date().toISOString(), by: myEmails()[0] || '', n: Object.keys(users).length, users });
+  const hd = { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' };
+  if (remote.exists && remote.eTag) hd['If-Match'] = remote.eTag;
+  const url = GRAPH + '/drives/' + remote.drive + '/root:/' + PHOTO_FILE + ':/content' + (remote.exists ? '' : '?@microsoft.graph.conflictBehavior=fail');
+  const res = await fetch(url, { method: 'PUT', headers: hd, body: text });
+  if (res.status === 412 || res.status === 409) throw new Error('읽은 뒤 다른 창에서 사진 파일이 먼저 바뀌었습니다 — 다시 눌러 주세요');
+  if (!res.ok) { let d = ''; try { const j = await res.json(); d = (j && j.error && (j.error.message || j.error.code)) || ''; } catch (e) {} throw new Error('올리기 HTTP ' + res.status + (d ? ' · ' + d : '')); }
+  const item = await res.json().catch(() => null), bytes = new TextEncoder().encode(text).length;
+  if (item && item.size != null && item.size !== bytes) throw new Error('올린 파일 크기가 맞지 않습니다(' + item.size + ' / ' + bytes + ') — 다시 눌러 주세요');
+  logAction(auto ? '사진 자동 반영' : '사진 반영', { slot: auto || '', total: p.total, was: p.was, added: p.add, changed: p.chg, removed: p.del, kept: Math.max(0, p.keep), held: p.held, kb: Math.round(bytes / 1024) });
+  return bytes;
+}
+async function photoCheck() {
+  if (_photoBusy || !PHOTOS) return;
+  _photoBusy = true; photoButtons(); photoSay('STK-DB 의 사진 파일을 읽는 중…');
+  try {
+    const remote = await photoRemote(), p = photoPlan(remote, false);
+    if (!p.add && !p.chg && !p.del) { _photoPlan = null; photoSay('✓ 바뀐 사진이 없습니다 — STK-DB 그대로(' + p.was + '명)' + (p.keep > 0 ? ' · 이번에 못 받은 ' + p.keep + '명은 올려 둔 사진 유지' : ''), 'ok'); return; }
+    _photoPlan = { remote, p, at: Date.now() };
+    photoSay((remote.exists ? 'STK-DB ' + p.was + '명 → ' : '처음 올림 → ') + p.total + '명 · ' + photoSum(p) + ' — 맞으면 「이대로 올리기」', 'warn');
+  } catch (e) { _photoPlan = null; photoSay('사진 파일을 확인하지 못했습니다: ' + e.message, 'err'); }
+  finally { _photoBusy = false; photoButtons(); }
+}
+function photoCancel() { _photoPlan = null; photoSay('취소했습니다 — STK-DB 는 그대로입니다.'); photoButtons(); }
+async function photoCommit() {
+  const P = _photoPlan; if (_photoBusy || !P) return;
+  if (Date.now() - P.at > 10 * 60e3) { _photoPlan = null; photoSay('확인한 지 10분이 지났습니다 — 「STK-DB 에 사진 반영」 을 다시 눌러 주세요', 'warn'); photoButtons(); return; }
+  _photoBusy = true; photoButtons(); photoSay('올리는 중…');
+  try {
+    const bytes = await photoWrite(P.remote, P.p, '');
+    _photoPlan = null; photoSay('✓ STK-DB 에 반영했습니다 — 사진 ' + P.p.total + '명 · ' + photoSum(P.p) + ' · ' + Math.round(bytes / 1024) + 'KB', 'ok');
+  } catch (e) { _photoPlan = null; photoSay('올리지 못했습니다: ' + e.message, 'err'); }
+  finally { _photoBusy = false; photoButtons(); }
+}
+// 자동 수집 회차 뒤 — 파일이 이미 있을 때만, 바뀐 것만. 실패해도 명부 반영 결과와 따로 이력만 남긴다
+async function photoAuto(key) {
+  if (_photoBusy || !PHOTOS || !PHOTO_META || PHOTO_META.none) return;
+  _photoBusy = true; photoButtons();
+  try {
+    const remote = await photoRemote(); if (!remote.exists) { photoSay('자동 수집(' + key + '): 사진은 아직 한 번도 올리지 않아 자동으로 올리지 않았습니다 — 「STK-DB 에 사진 반영」 으로 처음 한 번 올려 주세요', 'warn'); return; }
+    const p = photoPlan(remote, true);
+    if (!p.add && !p.chg && !p.del) { photoSay('자동 수집(' + key + '): 바뀐 사진 없음' + (p.held ? ' · 빠짐 ' + p.held + '명은 보류 — 「STK-DB 에 사진 반영」 으로 확인' : ''), p.held ? 'warn' : 'ok'); if (p.held) logAction('사진 자동 반영', { slot: key, result: 'hold', held: p.held }); return; }
+    const bytes = await photoWrite(remote, p, key);
+    photoSay('자동 수집(' + key + '): 사진 ' + p.total + '명 · ' + photoSum(p) + ' · ' + Math.round(bytes / 1024) + 'KB', p.held ? 'warn' : 'ok');
+  } catch (e) { photoSay('자동 수집(' + key + '): 사진을 올리지 못했습니다 — ' + e.message, 'err'); logAction('사진 자동 반영', { slot: key, result: 'fail', reason: String(e && e.message || e).slice(0, 160) }); }
+  finally { _photoBusy = false; photoButtons(); }
+}
+function resetAll() { USERS = new Map(); CMP = null; ROWS = []; PHOTOS = null; PHOTO_META = null; _photoPlan = null; photoPanel(); document.getElementById('paste').value = ''; ['in-msg', 'cmp-msg'].forEach(id => { const el = document.getElementById(id); el.textContent = ''; el.className = 'status'; }); ['map-card', 'out-card'].forEach(id => document.getElementById(id).classList.add('hidden')); }
 function showTab(t) { ['auto', 'file'].forEach(k => { document.getElementById('pane-' + k).classList.toggle('hidden', k !== t); document.getElementById('tab-' + k).classList.toggle('on', k === t); }); }
 function toggleConsole(ev) { ev.preventDefault(); document.getElementById('console-box').classList.toggle('hidden'); document.getElementById('icon-box').classList.add('hidden'); }
 function toggleIcon(ev) { ev.preventDefault(); document.getElementById('icon-box').classList.toggle('hidden'); document.getElementById('console-box').classList.add('hidden'); }
@@ -2060,7 +2193,7 @@ function autoProgress(d) {
     if (c.manual) { autoFinish(c.key, { result: 'fail', reason: c.err }); return; }
     c.phase = 'retry'; c.retryAt = Date.now() + (d.busy ? 60e3 : AUTO_RETRY_MS);
   } else if (c.phase === 'wait') {
-    c.prog = d.stage === 'read' ? 'Flex 에서 읽는 중 ' + (d.count || 0) + (d.total ? ' / ' + d.total : '') + '명' : d.stage === 'send' ? '받는 중' : 'Flex 탭에서 연결하는 중';
+    c.prog = d.stage === 'read' ? 'Flex 에서 읽는 중 ' + (d.count || 0) + (d.total ? ' / ' + d.total : '') + '명' : d.stage === 'photo' ? 'Flex 에서 프로필 사진 받는 중 ' + (d.count || 0) + '명' : d.stage === 'send' ? '받는 중' : 'Flex 탭에서 연결하는 중';
   }
   renderAuto();
 }
@@ -2073,6 +2206,7 @@ async function autoReceived(d, n) {
   let r;
   try { r = await autoApply(c.key, n, tot); } catch (e) { r = { result: 'fail', reason: String(e && e.message || e).slice(0, 160) }; }
   autoFinish(c.key, r);
+  await photoAuto(c.key);   // 11-06: 명부 판정과 따로 — 사진 파일이 이미 있을 때만, 바뀐 사진만
 }
 // 받은 목록으로 「STK-DB 에 반영」 과 같은 절차를 밟되, 안전할 때만 끝까지 간다
 async function autoApply(key, n, tot) {
@@ -2123,16 +2257,17 @@ function fmHide() { document.getElementById('flex-modal').classList.remove('show
 function fmWatch() { clearTimeout(_fmTimer); _fmTimer = setTimeout(() => { if (_fmShown) fmSet({ stage: 'error', text: 'flex.team 탭에서 진행 상자를 확인해 주세요 — 2분 동안 소식이 없습니다.' }); }, 120000); }
 function fmSet(d) {
   if (!_fmShown && d.stage !== 'done') fmShow(); else fmWatch();
-  const st = ['fs-1', 'fs-2', 'fs-3'], idx = { capture: 0, read: 1, send: 2, done: 3, error: -1 }[d.stage];
+  const st = ['fs-1', 'fs-2', 'fs-3'], idx = { capture: 0, read: 1, photo: 2, send: 2, done: 3, error: -1 }[d.stage];
   const cur = d.stage === 'error' ? (_fmLastIdx == null ? 0 : _fmLastIdx) : idx; if (d.stage !== 'error') _fmLastIdx = idx;
   st.forEach((id, i) => { const el = document.getElementById(id); el.className = 'fs' + (i < cur ? ' done' : i === cur ? (d.stage === 'error' ? ' bad' : ' act') : ''); el.querySelector('.ic').textContent = i < cur ? '✓' : (d.stage === 'error' && i === cur ? '!' : String(i + 1)); });
   const bar = document.getElementById('fm-bar'), tot = d.total || 0, cnt = d.count || 0;
   if (d.stage === 'read' && tot) { bar.classList.remove('indet'); bar.firstElementChild.style.width = Math.min(100, Math.round(cnt / tot * 100)) + '%'; }
+  else if (d.stage === 'photo' && tot) { bar.classList.remove('indet'); bar.firstElementChild.style.width = Math.min(100, Math.round(cnt / tot * 100)) + '%'; }
   else if (d.stage === 'send' || d.stage === 'done') { bar.classList.remove('indet'); bar.firstElementChild.style.width = '100%'; }
   else if (d.stage === 'capture') { bar.classList.add('indet'); }
-  document.getElementById('fs-2s').textContent = d.stage === 'read' ? (cnt + (tot ? ' / ' + tot : '') + '명' + (d.pages ? ' · ' + d.pages + '페이지' : '') + (d.scroll ? ' · 목록을 내리며 불러오는 중' : '')) : (idx > 1 ? (cnt ? cnt + (tot ? ' / ' + tot : '') + '명' : '') : '');
+  if (d.stage !== 'photo') document.getElementById('fs-2s').textContent = d.stage === 'read' ? (cnt + (tot ? ' / ' + tot : '') + '명' + (d.pages ? ' · ' + d.pages + '페이지' : '') + (d.scroll ? ' · 목록을 내리며 불러오는 중' : '')) : (idx > 1 ? (cnt ? cnt + (tot ? ' / ' + tot : '') + '명' : '') : '');
   document.getElementById('fs-1s').textContent = d.stage === 'capture' ? '구성원 목록을 불러오는 중' : (idx > 0 ? '연결됨' : '');
-  document.getElementById('fs-3s').textContent = d.stage === 'send' ? '정리하는 중…' : (d.stage === 'done' ? (d.count + '명을 가져왔습니다') : '');
+  document.getElementById('fs-3s').textContent = d.stage === 'photo' ? '프로필 사진 받는 중 ' + cnt + (tot ? ' / ' + tot : '') + '명' : d.stage === 'send' ? '정리하는 중…' : (d.stage === 'done' ? (d.count + '명을 가져왔습니다') : '');
   const s = document.getElementById('fm-s'), note = document.getElementById('fm-note'), dg = document.getElementById('fm-diag');
   if (d.diag) _fmDiag = d.diag; if (d.v) _fmVer = d.v;
   dg.classList.toggle('hidden', !_fmDiag);
@@ -2147,7 +2282,7 @@ function fmSet(d) {
     if (!partial) setTimeout(fmHide, 1400);
   }
   else if (d.scroll && d.hidden) { s.textContent = 'Flex 탭을 열어 두어야 목록이 내려갑니다'; note.textContent = 'Flex 탭으로 가 주세요 — 다 불러오면 이 창에 자동으로 들어옵니다'; note.style.color = '#8a6914'; }
-  else { s.textContent = 'Flex 에서 구성원 목록을 불러오고 있습니다'; note.textContent = '창을 닫지 마세요'; note.style.color = ''; }
+  else { s.textContent = d.stage === 'photo' ? 'Flex 에서 프로필 사진을 받고 있습니다' : 'Flex 에서 구성원 목록을 불러오고 있습니다'; note.textContent = '창을 닫지 마세요'; note.style.color = ''; }
   document.getElementById('fm-goflex').classList.toggle('hidden', !(d.scroll && d.hidden));
 }
 let _fmVer = 0;
@@ -2160,6 +2295,7 @@ function flexInboxFlush(quiet) {
   const d = _flexInbox; _flexInbox = null; let n = 0; _flexSeq++;
   USERS = new Map(); CMP = null; resetMap(false);   // 새로 가져온 목록이 기준 — 이전 목록 · 매핑 변경 · 비교는 비운다
   d.users.forEach(u => { const e = u && u.basicInfo && u.basicInfo.email; if (!e) return; USERS.set(String(e).trim().toLowerCase(), u); });
+  photoTake(d);
   n = USERS.size;   // 같은 사람이 두 번 와도 한 명 — 「전체 N명 다 받음」 판정이 중복으로 부풀지 않게
   const tot = d.total && typeof d.total === 'object' ? (d.total.value || d.total.count || 0) : (d.total || 0);
   afterIngest((quiet && d.key ? '자동 수집(' + d.key + ') ' : 'Flex 자동 수집 ') + n + '명' + (tot ? ' / Flex 전체 ' + tot + '명' : '') + ' · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + ' · 수집 코드 ' + (d.v ? 'v' + d.v : '예전 북마크'));
@@ -2183,8 +2319,8 @@ function flexInboxFlush(quiet) {
      4. 쓰는 사람은 북마크를 다시 등록한다 — 예전 북마크로 수집하면 이 화면이 「다시 등록」 안내를 계속 띄운다(아래 bmLoaderCheck).
      LOADER_V 는 로더 문자열 자체를 바꿀 때만 올린다. */
 const LOADER_V = 2;
-const COLLECTOR_V = 13;
-const COLLECTOR_SHA256 = 'cbb77575b386949d0e51ffe3ad6ac58096dc673c2f1f45d82b472ef4262ea70e';
+const COLLECTOR_V = 14;
+const COLLECTOR_SHA256 = 'e2af8f5bc933d54bb718e405f290d5e69f527b3f24b7a03ec8bf72938d5ddfba';
 const LS_BM_STALE = 'hfs.bm.stale';
 /* 북마클릿 단추 — href 를 javascript: 로 만들어 북마크 바로 끌어다 놓을 수 있게. 이 화면에서 누르면 실행하지 않고 안내만 */
 function bmSetup() {

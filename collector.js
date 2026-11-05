@@ -3,7 +3,7 @@ var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin
 /* v13(10-10) — 요청 틀(TPL_KEY)에 인증 헤더 원문을 남기지 않는다. 예전 틀(v1)은 묶인 헤더도 원문을 함께 저장했으므로 지운다. */
 try { localStorage.removeItem('hfs.collect.tpl.v1'); } catch (e) {}
 if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-var V = 13;
+var V = 14;
 var LDR = window.__hfsLdr || null;   /* 북마크 로더가 남긴 정보 { v: 로더 판, pin: 고정한 수집기 판, ok: 해시 검증 통과 } — 없으면 예전 북마크. HFS 가 다시 등록 안내에 쓴다 */
 var main = async function (ctx) {
 ctx = ctx || {};
@@ -268,7 +268,30 @@ closeFrame();
 }
 if (AUTO && !ok) { fail('자동 수집: 저장된 연결로 끝까지 읽지 못했습니다(' + users.size + (total ? '/' + total : '') + '명). Flex 로그인이 풀렸거나 화면이 바뀌었을 수 있습니다 — Flex 탭에서 「HFS 수집」 을 한 번 다시 눌러 주세요.'); return; }
 if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로고침한 뒤 북마크를 다시 눌러 주세요.'); return; }
-var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY }, acked = false;
+/* v14(11-06) — 프로필 사진: 구성원마다 basicInfo.profileThumbnailImageUrl(없으면 profileImageUrl)을 이 Flex 탭의 로그인 그대로 받아
+가운데를 96×96 으로 잘라 JPEG 로 줄여 HFS 에 함께 보낸다. 사진 서버(thumbnail-cdn.flex.team)로 넘어갈 때 쿠키를 싣지 않아야 받힌다(credentials: same-origin).
+실패 · 시간 초과(90초 · 자동 수집은 60초 — HFS 가 4분까지 기다린다)는 그 사진만 빠지고 구성원 목록은 그대로 보낸다. 사진 원본 주소는 보내지 않는다. */
+var photos = {}, photoStat = { tried: 0, ok: 0, fail: 0 }, PX = 96, PTMAX = AUTO ? 60000 : 90000;
+var photoOne = async function (u) {
+var b = u && u.basicInfo, src = b && (b.profileThumbnailImageUrl || b.profileImageUrl), em = b && b.email;
+if (!src || !em) return;
+photoStat.tried++;
+try {
+var r = await F.call(window, new URL(src, location.href).href, { credentials: 'same-origin' });
+if (!r.ok) { photoStat.fail++; return; }
+var bl = await r.blob(); if (!/^image\//.test(bl.type)) { photoStat.fail++; return; }
+var bm = await createImageBitmap(bl), sz = Math.min(bm.width, bm.height);
+var cv = document.createElement('canvas'); cv.width = cv.height = PX;
+var g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.fillStyle = '#ffffff'; g.fillRect(0, 0, PX, PX);
+g.drawImage(bm, (bm.width - sz) / 2, (bm.height - sz) / 2, sz, sz, 0, 0, PX, PX); if (bm.close) bm.close();
+photos[String(em).trim().toLowerCase()] = cv.toDataURL('image/jpeg', 0.86); photoStat.ok++;
+} catch (er) { photoStat.fail++; }
+};
+var plist = Array.from(users.values()), pIdx = 0, pT0 = Date.now();
+prog('photo', { count: 0, total: plist.length });
+await Promise.all([0, 1, 2, 3].map(async function () { while (pIdx < plist.length && Date.now() - pT0 < PTMAX) { var pu = plist[pIdx++]; await photoOne(pu); if (pIdx % 6 === 0) prog('photo', { count: photoStat.ok, total: plist.length }); } }));
+log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초');
+var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY, photos: photos, photoStat: photoStat }, acked = false;
 onAck = function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } };
 window.addEventListener('message', onAck);
 log('보냄: ' + users.size + '명' + (total ? ' / ' + total : ''));
