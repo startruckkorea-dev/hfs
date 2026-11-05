@@ -3,7 +3,7 @@ var HFS = 'https://startruckkorea-dev.github.io/hfs/', ORG = new URL(HFS).origin
 /* v13(10-10) — 요청 틀(TPL_KEY)에 인증 헤더 원문을 남기지 않는다. 예전 틀(v1)은 묶인 헤더도 원문을 함께 저장했으므로 지운다. */
 try { localStorage.removeItem('hfs.collect.tpl.v1'); } catch (e) {}
 if (!/(^|\.)flex\.team$/.test(location.hostname)) { alert('flex.team 구성원 화면(https://flex.team/people/users)에서 눌러 주세요.'); return; }
-var V = 14;
+var V = 15;
 var LDR = window.__hfsLdr || null;   /* 북마크 로더가 남긴 정보 { v: 로더 판, pin: 고정한 수집기 판, ok: 해시 검증 통과 } — 없으면 예전 북마크. HFS 가 다시 등록 안내에 쓴다 */
 var main = async function (ctx) {
 ctx = ctx || {};
@@ -271,26 +271,31 @@ if (!users.size) { fail('구성원을 읽지 못했습니다. Flex 탭을 새로
 /* v14(11-06) — 프로필 사진: 구성원마다 basicInfo.profileThumbnailImageUrl(없으면 profileImageUrl)을 이 Flex 탭의 로그인 그대로 받아
 가운데를 96×96 으로 잘라 JPEG 로 줄여 HFS 에 함께 보낸다. 사진 서버(thumbnail-cdn.flex.team)로 넘어갈 때 쿠키를 싣지 않아야 받힌다(credentials: same-origin).
 실패 · 시간 초과(90초 · 자동 수집은 60초 — HFS 가 4분까지 기다린다)는 그 사진만 빠지고 구성원 목록은 그대로 보낸다. 사진 원본 주소는 보내지 않는다. */
-var photos = {}, photoStat = { tried: 0, ok: 0, fail: 0 }, PX = 96, PTMAX = AUTO ? 60000 : 90000;
+/* v15(11-06) — v14 첫 실행에서 72명 모두 사진을 받지 못함(이유가 기록되지 않았다). 그래서
+① 사람마다 실패 이유(HTTP 상태 · 받은 형식 · 오류 이름)를 세어 HFS 에 함께 보낸다(photoStat.why · 처음 실패한 주소의 경로만 — 쿼리 · 서명 없이),
+② fetch 가 그림이 아닌 것을 받거나 막히면 브라우저가 그림을 읽는 방식(<img crossOrigin=anonymous> — 같은 출처 쿠키 · 그림 요청 머리글)으로 한 번 더 읽는다. */
+var photos = {}, photoStat = { tried: 0, ok: 0, fail: 0, why: {}, via: { fetch: 0, img: 0 }, path: '' }, PX = 96, PTMAX = AUTO ? 60000 : 90000;
+var pWhy = function (k, src) { k = String(k).slice(0, 80); photoStat.why[k] = (photoStat.why[k] || 0) + 1; if (!photoStat.path) { try { photoStat.path = new URL(src, location.href).pathname.slice(0, 120); } catch (e) {} } };
+var pImg = function (url) { return new Promise(function (ok, no) { var im = new Image(), t = setTimeout(function () { im.src = ''; no(new Error('시간 초과')); }, 15000); im.crossOrigin = 'anonymous'; im.onload = function () { clearTimeout(t); ok(im); }; im.onerror = function () { clearTimeout(t); no(new Error('읽기 실패')); }; im.src = url; }); };
+var pDraw = function (srcImg, w, h) { var sz = Math.min(w, h); var cv = document.createElement('canvas'); cv.width = cv.height = PX; var g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.fillStyle = '#ffffff'; g.fillRect(0, 0, PX, PX); g.drawImage(srcImg, (w - sz) / 2, (h - sz) / 2, sz, sz, 0, 0, PX, PX); return cv.toDataURL('image/jpeg', 0.86); };
 var photoOne = async function (u) {
 var b = u && u.basicInfo, src = b && (b.profileThumbnailImageUrl || b.profileImageUrl), em = b && b.email;
 if (!src || !em) return;
 photoStat.tried++;
+var url = new URL(src, location.href).href, key = String(em).trim().toLowerCase(), why1 = '';
 try {
-var r = await F.call(window, new URL(src, location.href).href, { credentials: 'same-origin' });
-if (!r.ok) { photoStat.fail++; return; }
-var bl = await r.blob(); if (!/^image\//.test(bl.type)) { photoStat.fail++; return; }
-var bm = await createImageBitmap(bl), sz = Math.min(bm.width, bm.height);
-var cv = document.createElement('canvas'); cv.width = cv.height = PX;
-var g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.fillStyle = '#ffffff'; g.fillRect(0, 0, PX, PX);
-g.drawImage(bm, (bm.width - sz) / 2, (bm.height - sz) / 2, sz, sz, 0, 0, PX, PX); if (bm.close) bm.close();
-photos[String(em).trim().toLowerCase()] = cv.toDataURL('image/jpeg', 0.86); photoStat.ok++;
-} catch (er) { photoStat.fail++; }
+var r = await F.call(window, url, { credentials: 'same-origin' });
+if (!r.ok) why1 = 'fetch HTTP ' + r.status;
+else { var bl = await r.blob(); if (!/^image\//.test(bl.type)) why1 = 'fetch 형식 ' + (bl.type || '없음').split(';')[0];
+else { var bm = await createImageBitmap(bl); photos[key] = pDraw(bm, bm.width, bm.height); if (bm.close) bm.close(); photoStat.ok++; photoStat.via.fetch++; return; } }
+} catch (er) { why1 = 'fetch ' + ((er && er.name) || '오류') + (er && er.message ? ': ' + er.message : ''); }
+try { var im = await pImg(url); photos[key] = pDraw(im, im.naturalWidth, im.naturalHeight); photoStat.ok++; photoStat.via.img++; if (why1) pWhy(why1 + ' → img 성공', src); }
+catch (er2) { photoStat.fail++; pWhy((why1 || 'fetch ?') + ' / img ' + ((er2 && er2.message) || '실패'), src); }
 };
 var plist = Array.from(users.values()), pIdx = 0, pT0 = Date.now();
 prog('photo', { count: 0, total: plist.length });
 await Promise.all([0, 1, 2, 3].map(async function () { while (pIdx < plist.length && Date.now() - pT0 < PTMAX) { var pu = plist[pIdx++]; await photoOne(pu); if (pIdx % 6 === 0) prog('photo', { count: photoStat.ok, total: plist.length }); } }));
-log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초');
+log('사진: ' + photoStat.ok + '/' + photoStat.tried + '명 받음(fetch ' + photoStat.via.fetch + ' · img ' + photoStat.via.img + ')' + (photoStat.fail ? ' · 실패 ' + photoStat.fail : '') + ' · ' + Math.round((Date.now() - pT0) / 1000) + '초' + (Object.keys(photoStat.why).length ? ' · 이유 ' + Object.keys(photoStat.why).map(function (k) { return k + ' ×' + photoStat.why[k]; }).join(' | ') + (photoStat.path ? ' · 경로 ' + photoStat.path : '') : ''));
 var payload = { type: 'hfs-flex-users', users: Array.from(users.values()), total: total, at: Date.now(), v: V, ldr: LDR, rid: RID, auto: AUTO, key: KEY, photos: photos, photoStat: photoStat }, acked = false;
 onAck = function (ev) { if (ev.origin === ORG && ev.data && ev.data.type === 'hfs-flex-ack') { acked = true; log('HFS 받음'); done(); } };
 window.addEventListener('message', onAck);
