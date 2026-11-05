@@ -1013,6 +1013,11 @@ function engName(b, ovr) {
      st(팀원)   : 그 팀장(공석이면 -) · 그 본부 본부장(단독 팀이면 그 팀장, 없으면 -) · 대표
    결재 시스템: 팀장 단계 = Team Manager(없으면 Department Head → RD), 부서장 단계 = Department Head(없으면 RD). */
 const ORG3 = ['Team Manager', 'Department Head', 'RD'];
+/* 11-05: L열 KorName — 한글 본명(Flex 구성원의 이름 basicInfo.name). APS 는 머리글 이름으로 열을 찾으므로 맨 뒤에 더해도 A~K 는 그대로다.
+   Training365 사용자 · 권한 관리가 이 열을 읽어 한글 이름을 채운다. 처음 채우는 때(머리글 없음 · 모두 빈칸)는 「바뀜」 으로 세지 않는다. */
+const KOR = 'KorName';
+const ALLCOLS = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'].concat(ORG3, [KOR]);
+function korNew(headers, rows) { return headers.indexOf(KOR) < 0 || !(rows || []).some(r => String(r[KOR] == null ? '' : r[KOR]).trim()); }
 // 명부(헤더 · 행)에서 이번에 「처음 채우는」 3열 — 머리글이 없거나, 머리글만 있고 값이 모두 빈 열. 이 열은 「바뀜」 으로 세지 않는다(열 추가 한 번에 전원이 바뀜으로 잡히지 않게)
 function org3New(headers, rows) {
   return ORG3.filter(c => headers.indexOf(c) < 0 || !(rows || []).some(r => String(r[c] == null ? '' : r[c]).trim()));
@@ -1060,7 +1065,7 @@ function convert() {
     else if (kind === 'tl') { tmN = p.name; dhN = nmOf(deptHead(dept)); }
     else { tmN = nmOf(headOf[team]); dhN = nmOf(deptHead(dept)); }
     const rdN = kind === 'rd' ? p.name : nmOf(rd);
-    out.push({ Company: 'STK', Department: dept, Team: team, EngName: p.name, EMail: p.email, WMC_old: '', Boss: boss, 'Boss of Boss': boss2, 'Team Manager': tmN, 'Department Head': dhN, RD: rdN, _kind: kind, _loa: p.loa, _ext: p.ext, _ko: p.ko, _title: p.title, _warn: warn });
+    out.push({ Company: 'STK', Department: dept, Team: team, EngName: p.name, EMail: p.email, WMC_old: '', Boss: boss, 'Boss of Boss': boss2, 'Team Manager': tmN, 'Department Head': dhN, RD: rdN, KorName: String(p.ko || '').trim(), _kind: kind, _loa: p.loa, _ext: p.ext, _ko: p.ko, _title: p.title, _warn: warn });
   }
   const tOrder = {}; Object.keys(MAP).forEach((k, i) => tOrder[k] = i);
   const dIdx = d => { const i = DEPT_ORDER.indexOf(d); return i < 0 ? 50 : i; };
@@ -1137,7 +1142,7 @@ function build() {
 }
 /* 결과 표 — 한 화면에 들어가게: Company · WMC_old 는 늘 같으니 화면에서는 빼고(Excel 에는 그대로), 메일은 이름 아래 작게, 한글 이름 · 직책 · 알약은 「구분」 열에 */
 function renderTable() {
-  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: I·J·K 고정 조직도
+  const H = ALLCOLS;   // 10-14: I·J·K 고정 조직도 · 11-05: L KorName(한글 이름은 화면에서 「구분」 열에 보인다)
   const cm = CMP ? CMP.byEmail : null;
   const nc = (CMP && CMP.newCols) || [];   // 10-14: 비교한 파일에 아직 없는 3열은 머리글에 「새 열」 로 표시하고 「기존 대비」 에서 세지 않는다
   const head = '<tr><th class="c-no">#</th><th>Department</th><th>Team</th><th>이름 · 메일</th><th>Boss</th><th>Boss of Boss</th>' +
@@ -1174,18 +1179,18 @@ function applyCompare(name, buf) {
   const wb = XLSX.read(buf, { type: 'array' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
   const byEmail = {}; rows.forEach(r => { const e = String(r.EMail || r.email || '').trim().toLowerCase(); if (e) byEmail[e] = r; });
-  CMP = { name, byEmail, newCols: org3New(Object.keys(rows[0] || {}), rows) };   // 10-14: 이 파일에 아직 없는(또는 비어 있는) 3열
+  CMP = { name, byEmail, newCols: org3New(Object.keys(rows[0] || {}), rows).concat(korNew(Object.keys(rows[0] || {}), rows) ? [KOR] : []) };   // 11-05: KorName 도 처음이면 「새 열」   // 10-14: 이 파일에 아직 없는(또는 비어 있는) 3열
   const nNew = ROWS.filter(r => !byEmail[r.EMail]).length, nGone = Object.keys(byEmail).filter(e => !ROWS.some(r => r.EMail === e)).length;
-  const nChg = ROWS.filter(r => byEmail[r.EMail] && ['Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].concat(ORG3.filter(c => CMP.newCols.indexOf(c) < 0)).some(h => String(byEmail[r.EMail][h] || '').trim() !== String(r[h]).trim())).length;
+  const nChg = ROWS.filter(r => byEmail[r.EMail] && ['Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].concat(ORG3, [KOR]).filter(c => CMP.newCols.indexOf(c) < 0).some(h => String(byEmail[r.EMail][h] || '').trim() !== String(r[h]).trim())).length;
   const m = document.getElementById('cmp-msg'); m.className = 'status warn';
   m.textContent = name + ' (' + rows.length + '명) 와 비교 — 신규 ' + nNew + ' · 바뀜 ' + nChg + ' · 빠짐 ' + nGone + (CMP.newCols.length ? ' · 새 열 ' + CMP.newCols.join(' · ') + '(이 파일에 아직 없음 — 반영하면 더해집니다)' : '') + '. 오른쪽 「기존 대비」 열에서 확인하세요.';
   renderTable();
 }
 function download() {
   if (!ROWS.length) return;
-  const H = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'WMC_old', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: I·J·K 고정 조직도
+  const H = ALLCOLS;   // 10-14: I·J·K 고정 조직도 · 11-05: L KorName
   const ws = XLSX.utils.aoa_to_sheet([H, ...ROWS.map(r => H.map(h => r[h]))]);
-  ws['!cols'] = [9, 18, 38, 20, 34, 10, 18, 18, 18, 18, 18].map(w => ({ wch: w }));
+  ws['!cols'] = [9, 18, 38, 20, 34, 10, 18, 18, 18, 18, 18, 12].map(w => ({ wch: w }));
   ws['!autofilter'] = { ref: ws['!ref'] };
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   const k = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
@@ -1219,7 +1224,7 @@ function download() {
      · 파일에 없는 필수 열은 맨 뒤에 더한다. 열 순서는 파일을 따른다(사람이 보던 순서 유지). */
 const EMP_FILE = 'employee_search.xlsx';
 const EMP_BACKUP_DIR = 'Backup/employee_search';
-const EMP_OWNED = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'Boss', 'Boss of Boss'].concat(ORG3);  // HFS 가 값을 정하는 열(10-14: + I·J·K 고정 조직도. WMC_old 등은 그대로 보존)
+const EMP_OWNED = ['Company', 'Department', 'Team', 'EngName', 'EMail', 'Boss', 'Boss of Boss'].concat(ORG3, [KOR]);   // 11-05: + L KorName  // HFS 가 값을 정하는 열(10-14: + I·J·K 고정 조직도. WMC_old 등은 그대로 보존)
 const EMP_KEYCOLS = ['EMail', 'EngName'];      // 이 둘이 머리글에 없으면 명부 파일이 아니라고 본다
 let PUSH_SAVE_WAIT_MS = 90e3, PUSH_SAVE_POLL_MS = 5e3;   // 반영 뒤 SharePoint 파일 저장을 기다리는 최대 시간 · 간격(10-06)
 const EMP_MIN_ROWS = 10;                        // 이보다 적으면 잘못 읽은 것으로 보고 멈춘다
@@ -1373,9 +1378,10 @@ async function pushOpen() {
     const cols = headers.slice();
     const added = EMP_OWNED.filter(c => cols.indexOf(c) < 0);
     // 10-14: 새 3열을 더할 때만 — 쓰인 범위 끝의 「머리글도 값도 빈 열」 은 걷어 내고 붙인다(서식만 남은 빈 I열 때문에 J·K·L 로 밀리지 않게)
-    if (added.some(c => ORG3.indexOf(c) >= 0)) { while (cols.length && !cols[cols.length - 1] && vals.slice(1).every(r => String(r[cols.length - 1] == null ? '' : r[cols.length - 1]).trim() === '')) cols.pop(); }
+    if (added.some(c => ORG3.indexOf(c) >= 0 || c === KOR)) { while (cols.length && !cols[cols.length - 1] && vals.slice(1).every(r => String(r[cols.length - 1] == null ? '' : r[cols.length - 1]).trim() === '')) cols.pop(); }
     added.forEach(c => cols.push(c));
-    const orgNew = org3New(headers, oldRows);   // 10-14: 이번에 처음 채우는 3열(머리글 없음 · 또는 모두 빈칸) — 「바뀜」 에 세지 않고 「새 열 추가」 로 보여 준다
+    const orgNew = org3New(headers, oldRows);
+    const korFirst = korNew(headers, oldRows);   // 11-05: KorName 을 처음 채우면 「바뀜」 에 세지 않고 아래에 따로 알린다   // 10-14: 이번에 처음 채우는 3열(머리글 없음 · 또는 모두 빈칸) — 「바뀜」 에 세지 않고 「새 열 추가」 로 보여 준다
     const tblExt = tbls.filter(t => /!\$?A\$?1:/i.test(t.address) && t.columnCount < cols.length);   // A1 에서 시작해 새 열보다 좁은 표
     const kept = cols.filter(c => c && EMP_OWNED.indexOf(c) < 0);
     if (vl) { vl.emailCol = colLetter(cols.indexOf('EMail') + 1); vl.nameCol = colLetter(cols.indexOf('EngName') + 1); }   // 거울 수식이 가리킬 열
@@ -1383,7 +1389,7 @@ async function pushOpen() {
       return cols.map(c => EMP_OWNED.indexOf(c) >= 0 ? (r[c] == null ? '' : r[c]) : (o && o[c] != null ? o[c] : '')); });
 
     // ── 무엇이 달라지는지 ──
-    const DIFFC = ['Company', 'Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: 3열도 비교(처음 채우는 열은 아래에서 뺀다)
+    const DIFFC = ['Company', 'Department', 'Team', 'EngName', 'Boss', 'Boss of Boss'].concat(ORG3, korFirst ? [] : [KOR]);   // 10-14: 3열도 비교(처음 채우는 열은 아래에서 뺀다) · 11-05 KorName
     const nw = ROWS.filter(r => !byEmail[r.EMail]);
     const chg = [];
     ROWS.forEach(r => { const o = byEmail[r.EMail]; if (!o) return;
@@ -1414,7 +1420,7 @@ async function pushOpen() {
       (offExt ? '· 「계약직(.ext) 포함」 이 꺼져 있습니다 — 계약직은 명부에서 <b>지워집니다</b>.<br>' : '') +
       'APS 는 이 명부에 없는 사람을 결재자로 찾지 못합니다. 그대로 두려면 취소하고 체크를 켜 주세요.</div>';
     else if (gone.length) H += '<div class="pm-box pm-warn"><b>' + gone.length + '명이 명부에서 지워집니다.</b> 아래 「빠짐」 목록을 확인해 주세요 — 퇴사자가 맞는지, Flex 수집이 중간에 끊긴 것은 아닌지.</div>';
-    const addedX = added.filter(c => ORG3.indexOf(c) < 0);   // 10-14: 3열은 아래 「새 열 추가」 에서 따로 보여 준다
+    const addedX = added.filter(c => ORG3.indexOf(c) < 0 && c !== KOR);   // 10-14: 3열은 아래 「새 열 추가」 에서 따로 보여 준다 · 11-05 KorName 도 아래에 따로
     if (addedX.length) H += '<div class="pm-box pm-warn">지금 파일에 없는 열을 맨 뒤에 더합니다: <b>' + esc(addedX.join(' · ')) + '</b></div>';
     if (orgNew.length) {
       const lead3 = ROWS.filter(r => r._kind !== 'st');
@@ -1425,6 +1431,13 @@ async function pushOpen() {
         li(lead3, r => '<div class="pm-row"><span>' + esc(r.EngName) + '<span class="em">' + esc(r.Team) + '</span></span><span class="d">' +
           ORG3.map(c => '<span class="k">' + esc(c) + '</span> ' + esc(r[c])).join(' · ') + '</span></div>') +
         '<label class="pm-chk"><input type="checkbox" class="pm-ackc" onchange="pmAckSync()"> 새 열(' + esc(orgNew.join(' · ')) + ')의 값을 확인했습니다.</label></div>';
+    }
+    if (korFirst) {
+      const noKo = ROWS.filter(r => !r.KorName);
+      H += '<div class="pm-box pm-warn"><b>새 열 추가</b> — <b>' + colLetter(cols.indexOf(KOR) + 1) + '열 KorName</b>(한글 본명 · Flex 이름)' + (headers.indexOf(KOR) >= 0 ? ' — 머리글만 있고 비어 있던 열에 값만 채웁니다.' : ' — 머리글을 새로 만듭니다.') +
+        ' APS 는 머리글 이름으로 열을 찾아 A~K 는 그대로입니다. Training365 사용자 · 권한 관리가 이 열을 읽습니다. 처음 채우는 열이라 「바뀜」 에는 세지 않습니다.' +
+        (noKo.length ? '<br>한글 이름이 빈 사람 ' + noKo.length + '명: ' + esc(noKo.slice(0, 5).map(r => r.EngName).join(', ')) + (noKo.length > 5 ? ' 외' : '') : '') +
+        '<label class="pm-chk"><input type="checkbox" class="pm-ackc" onchange="pmAckSync()"> 새 열(KorName)의 값을 확인했습니다.</label></div>';
     }
     if (tblExt.length) H += '<div class="pm-box pm-warn">첫 시트의 Excel 표 ' + tblExt.map(t => '「<b>' + esc(t.name) + '</b>」').join(' · ') + ' 범위를 <b>' + colLetter(cols.length) + '열</b>까지 늘립니다(새 열이 표 안에 들어가게).</div>';
     if (sheet.name !== 'employee_search') H += '<div class="pm-box pm-warn">첫 시트 이름이 <b>' + esc(sheet.name) + '</b> 입니다. APS 는 이름과 상관없이 첫 시트를 읽으므로 여기에 넣습니다.</div>';
@@ -1548,7 +1561,7 @@ async function pushRun() {
        · 먼저 Excel(시트) 이 지금 들고 있는 값을 읽어 우리가 쓴 줄과 칸 단위(메일 · EngName · 본부 · 팀 · Boss · Boss of Boss)로 대조 — 쓰기가 맞았는지
        · 그다음 APS 가 읽는 그대로(파일 내려받기 · SheetJS · 첫 시트) 같은 대조를 하되, 맞을 때까지 5초 간격으로 최대 90초 기다린다 — 저장이 끝났는지
        · 시트는 맞는데 90초 안에 파일이 안 바뀌면 「저장 대기」 — 반영은 된 것이고, 잠시 뒤 「STK-DB 명부와 비교」 로 확인하라고 안내한다 */
-    const KEYC = ['EMail', 'EngName', 'Department', 'Team', 'Boss', 'Boss of Boss'].concat(ORG3);   // 10-14: Team Manager · Department Head · RD 도 대조
+    const KEYC = ['EMail', 'EngName', 'Department', 'Team', 'Boss', 'Boss of Boss'].concat(ORG3, [KOR]);   // 11-05: KorName 도 대조   // 10-14: Team Manager · Department Head · RD 도 대조
     const ci = c => P.cols.indexOf(c);
     const want = new Map(P.body.map(r => [String(r[ci('EMail')] || '').trim().toLowerCase(), r]));
     const rk = (get) => KEYC.map(c => { const v = String(get(c) == null ? '' : get(c)).trim(); return c === 'EMail' ? v.toLowerCase() : v; }).join('\u0001');
